@@ -1,0 +1,16 @@
+{
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "format": "regex",
+            "title": "Name"
+        },
+        "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": false
+        }
+    },
+    "required": ["name"]
+}

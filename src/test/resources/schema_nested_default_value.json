@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "default": "John Doe"
+    },
+    "address": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "title": "City",
+          "type": "string",
+          "default": "Paris"
+        }
+      },
+      "required": [
+        "city"
+      ],
+      "default": {
+        "city": "Lille"
+      }
+    },
+    "age": {
+      "type": "integer"
+    },
+    "citizenship": {
+      "type": "string",
+      "default": "France"
+    }
+  },
+  "required": [
+    "name",
+    "citizenship",
+    "address"
+  ]
+}

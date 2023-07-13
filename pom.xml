@@ -40,7 +40,7 @@
         <everit-json-schema.version>1.14.2</everit-json-schema.version>
 
         <maven-plugin-javadoc.version>3.5.0</maven-plugin-javadoc.version>
-        <maven-plugin-prettier.version>0.19</maven-plugin-prettier.version>
+        <maven-plugin-prettier.version>0.20</maven-plugin-prettier.version>
         <maven-plugin-prettier.prettierjava.version>2.0.0</maven-plugin-prettier.prettierjava.version>
     </properties>
 

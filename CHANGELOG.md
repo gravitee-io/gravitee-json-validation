@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/gravitee-io/gravitee-json-validation/compare/2.0.0...2.0.1) (2023-11-22)
+
+
+### Bug Fixes
+
+* **deps:** update dependency org.json:json to v20231013 ([791dbb8](https://github.com/gravitee-io/gravitee-json-validation/commit/791dbb8c7fba09286cd53448974948e97148c694))
+
 # [2.0.0](https://github.com/gravitee-io/gravitee-json-validation/compare/1.0.0...2.0.0) (2023-08-31)
 
 

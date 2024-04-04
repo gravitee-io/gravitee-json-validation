@@ -34,7 +34,7 @@
     <name>Gravitee.io - JSON Validation</name>
 
     <properties>
-        <gravitee-bom.version>6.0.35</gravitee-bom.version>
+        <gravitee-bom.version>6.0.39</gravitee-bom.version>
 
         <json.version>20231013</json.version>
         <everit-json-schema.version>1.14.2</everit-json-schema.version>

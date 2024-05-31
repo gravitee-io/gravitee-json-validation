@@ -39,7 +39,7 @@
         <json.version>20231013</json.version>
         <everit-json-schema.version>1.14.2</everit-json-schema.version>
 
-        <maven-plugin-javadoc.version>3.6.3</maven-plugin-javadoc.version>
+        <maven-plugin-javadoc.version>3.7.0</maven-plugin-javadoc.version>
     </properties>
 
     <dependencyManagement>

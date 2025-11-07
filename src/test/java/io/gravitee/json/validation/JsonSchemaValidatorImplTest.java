@@ -34,6 +34,7 @@ class JsonSchemaValidatorImplTest {
     public static final String SCHEMA_WITH_NOT_ALLOWED_ADDITIONAL_PROPERTIES_AND_KEEP_PATTERN_PROPERTIES =
         "src/test/resources/schema_additional_properties_pattern_properties.json";
     public static final String SCHEMA_WITH_CUSTOM_REGEX = "src/test/resources/schema_custom_regex.json";
+    public static final String SCHEMA_WITH_ALLOF_AND_DEFAULT_VALUE = "src/test/resources/schema_allof_default_value.json";
 
     JsonSchemaValidator validator = new JsonSchemaValidatorImpl();
 
@@ -74,6 +75,15 @@ class JsonSchemaValidatorImplTest {
         result = validator.validate(schema, "{\"additional-property\": true, \"address\": {}}");
         assertThat(result)
             .isEqualTo("{\"additional-property\":true,\"address\":{\"city\":\"Paris\"},\"citizenship\":\"France\",\"name\":\"John Doe\"}");
+    }
+
+    @Test
+    void should_return_updated_json_required_default_value_with_allOf() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_ALLOF_AND_DEFAULT_VALUE));
+
+        String json = "{\"citizenship\": \"FR\"}";
+        String result = validator.validate(schema, json);
+        assertThat(result).isEqualTo("{\"citizenship\":\"FR\",\"status\":\"A\"}");
     }
 
     @Test

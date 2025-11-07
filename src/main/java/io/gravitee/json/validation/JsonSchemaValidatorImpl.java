@@ -72,8 +72,8 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
                 ObjectSchema violatedSchema = (ObjectSchema) validationException.getViolatedSchema();
                 Schema schemaField = violatedSchema.getPropertySchemas().get(errorField.get());
                 if (schemaField.hasDefaultValue()) {
-                    SchemaLocation location = violatedSchema.getLocation();
-                    updateProperty(location, errorField.get(), schemaField.getDefaultValue(), safeConfigurationJson);
+                    String pointerToViolation = validationException.getPointerToViolation();
+                    updateProperty(pointerToViolation, errorField.get(), schemaField.getDefaultValue(), safeConfigurationJson);
                 } else {
                     throw new InvalidJsonException(validationException);
                 }
@@ -91,9 +91,9 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
         return safeConfigurationJson;
     }
 
-    private void updateProperty(SchemaLocation location, String key, Object value, JSONObject target) {
+    private void updateProperty(String pointerToViolation, String key, Object value, JSONObject target) {
         Arrays
-            .stream(location.toString().split("/"))
+            .stream(pointerToViolation.split("/"))
             .filter(token -> !token.equals("properties") && !token.isEmpty())
             .map(property -> {
                 if (!property.equals("#")) {

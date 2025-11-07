@@ -1,3 +1,10 @@
+## [2.0.2](https://github.com/gravitee-io/gravitee-json-validation/compare/2.0.1...2.0.2) (2025-11-07)
+
+
+### Bug Fixes
+
+* use pointer instead of schema location ([67743da](https://github.com/gravitee-io/gravitee-json-validation/commit/67743dab9fcdc77e2c5dda079f6a492d329c63eb))
+
 ## [2.0.1](https://github.com/gravitee-io/gravitee-json-validation/compare/2.0.0...2.0.1) (2023-11-22)
 
 

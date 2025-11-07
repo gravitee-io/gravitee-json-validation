@@ -1,0 +1,25 @@
+{
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["A", "B"],
+            "default": "A"
+        },
+        "citizenship": {
+            "type": "string",
+            "default": "USA"
+        }
+    },
+    "required": ["status"],
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "type": { "const": "A" }
+                }
+            },
+            "then": { "required": ["citizenship"] }
+        }
+    ]
+}

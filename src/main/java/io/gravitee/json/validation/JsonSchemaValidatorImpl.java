@@ -17,13 +17,14 @@ package io.gravitee.json.validation;
 
 import static io.gravitee.json.validation.helper.JsonHelper.clearNullValues;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.everit.json.schema.ObjectSchema;
 import org.everit.json.schema.Schema;
-import org.everit.json.schema.SchemaLocation;
 import org.everit.json.schema.ValidationException;
 import org.everit.json.schema.internal.RegexFormatValidator;
 import org.everit.json.schema.loader.SchemaLoader;
@@ -33,23 +34,17 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
 
     private final Pattern errorFieldNamePattern = Pattern.compile("\\[(.*?)\\]");
 
+    private static final long MAX_CACHE_SIZE = 1000L;
+    private static final Cache<String, Schema> SCHEMA_CACHE = Caffeine.newBuilder().maximumSize(MAX_CACHE_SIZE).build();
+
     @Override
     public String validate(String schema, String json) {
         // At least, validate json.
         String safeConfiguration = clearNullValues(json);
 
-        if (schema != null && !schema.equals("")) {
-            JSONObject schemaJson = new JSONObject(schema);
+        if (schema != null && !schema.isEmpty()) {
             JSONObject safeConfigurationJson = new JSONObject(safeConfiguration);
-            Schema schemaValidator = SchemaLoader
-                .builder()
-                .useDefaults(true)
-                .addFormatValidator(new JavaRegexValidator())
-                .schemaJson(schemaJson)
-                .draftV7Support()
-                .build()
-                .load()
-                .build();
+            Schema schemaValidator = getSchemaValidator(schema);
             // Validate json against schema when defined.
             try {
                 schemaValidator.validate(safeConfigurationJson);
@@ -63,6 +58,10 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
             return safeConfigurationJson.toString();
         }
         return safeConfiguration;
+    }
+
+    private Schema getSchemaValidator(String schemaDefinition) {
+        return SCHEMA_CACHE.get(schemaDefinition, key -> buildSchema(new JSONObject(key)));
     }
 
     private JSONObject checkAndUpdate(JSONObject safeConfigurationJson, ValidationException validationException) {
@@ -114,6 +113,18 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
             return Optional.of(matcher.group(1));
         }
         return Optional.empty();
+    }
+
+    private static Schema buildSchema(JSONObject schemaJson) {
+        return SchemaLoader
+            .builder()
+            .useDefaults(true)
+            .addFormatValidator(new JavaRegexValidator())
+            .schemaJson(schemaJson)
+            .draftV7Support()
+            .build()
+            .load()
+            .build();
     }
 
     private static class JavaRegexValidator extends RegexFormatValidator {

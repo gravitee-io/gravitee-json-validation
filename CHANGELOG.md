@@ -1,3 +1,10 @@
+# [2.1.0](https://github.com/gravitee-io/gravitee-json-validation/compare/2.0.2...2.1.0) (2025-11-21)
+
+
+### Features
+
+* add caching for compiled schemas to improve performance ([cc0847b](https://github.com/gravitee-io/gravitee-json-validation/commit/cc0847bf9eac04f0286c48645828e2896ca7c765))
+
 ## [2.0.2](https://github.com/gravitee-io/gravitee-json-validation/compare/2.0.1...2.0.2) (2025-11-07)
 
 

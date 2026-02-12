@@ -1,0 +1,35 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "endpoint": {
+            "type": "object",
+            "oneOf": [
+                {
+                    "title": "HTTP Endpoint",
+                    "properties": {
+                        "type": { "const": "HTTP" },
+                        "url": { "type": "string" },
+                        "connectTimeout": { "type": "integer", "default": 5000 },
+                        "readTimeout": { "type": "integer", "default": 10000 },
+                        "keepAliveTimeout": { "type": "integer", "default": 30000 }
+                    },
+                    "required": ["type", "connectTimeout", "readTimeout", "keepAliveTimeout"],
+                    "additionalProperties": false
+                },
+                {
+                    "title": "GRPC Endpoint",
+                    "properties": {
+                        "type": { "const": "GRPC" },
+                        "host": { "type": "string" },
+                        "port": { "type": "integer", "default": 443 },
+                        "connectTimeout": { "type": "integer", "default": 3000 },
+                        "readTimeout": { "type": "integer", "default": 5000 }
+                    },
+                    "required": ["type", "connectTimeout", "readTimeout", "port"],
+                    "additionalProperties": false
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,27 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "config": {
+            "type": "object",
+            "oneOf": [
+                {
+                    "title": "Option A",
+                    "properties": {
+                        "type": { "const": "TYPE_A" },
+                        "timeout": { "type": "integer" }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "title": "Option B",
+                    "properties": {
+                        "type": { "const": "TYPE_B" },
+                        "timeout": { "type": "integer" }
+                    },
+                    "additionalProperties": false
+                }
+            ]
+        }
+    }
+}

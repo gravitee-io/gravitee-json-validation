@@ -1,0 +1,33 @@
+{
+    "type": "object",
+    "oneOf": [
+        {
+            "type": "object",
+            "properties": {
+                "common": {
+                    "type": "string",
+                    "default": "defaultCommon"
+                },
+                "onlyInFirst": {
+                    "type": "string",
+                    "default": "defaultFirst"
+                }
+            },
+            "required": ["common", "onlyInFirst"]
+        },
+        {
+            "type": "object",
+            "properties": {
+                "common": {
+                    "type": "string",
+                    "default": "defaultCommon"
+                },
+                "onlyInSecond": {
+                    "type": "string",
+                    "default": "defaultSecond"
+                }
+            },
+            "required": ["common", "onlyInSecond"]
+        }
+    ]
+}

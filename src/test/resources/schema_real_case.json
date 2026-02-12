@@ -1,0 +1,44 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "http": {
+            "$ref": "#/definitions/httpOptions"
+        }
+    },
+    "definitions": {
+        "readTimeout": {
+            "type": "integer",
+            "default": 10000
+        },
+        "connectTimeout": {
+            "type": "integer",
+            "default": 3000
+        },
+        "httpOptions": {
+            "type": "object",
+            "oneOf": [
+                {
+                    "title": "HTTP 1.1",
+                    "properties": {
+                        "version": { "const": "HTTP_1_1" },
+                        "connectTimeout": { "$ref": "#/definitions/connectTimeout" },
+                        "readTimeout": { "$ref": "#/definitions/readTimeout" }
+                    },
+                    "required": ["connectTimeout", "readTimeout"],
+                    "additionalProperties": false
+                },
+                {
+                    "title": "HTTP 2",
+                    "properties": {
+                        "version": { "const": "HTTP_2" },
+                        "connectTimeout": { "$ref": "#/definitions/connectTimeout" },
+                        "readTimeout": { "$ref": "#/definitions/readTimeout" }
+                    },
+                    "required": ["connectTimeout", "readTimeout"],
+                    "additionalProperties": false
+                }
+            ]
+        }
+    }
+}

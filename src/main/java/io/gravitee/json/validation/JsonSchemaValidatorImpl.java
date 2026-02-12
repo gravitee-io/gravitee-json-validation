@@ -20,10 +20,17 @@ import static io.gravitee.json.validation.helper.JsonHelper.clearNullValues;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.everit.json.schema.CombinedSchema;
+import org.everit.json.schema.ConstSchema;
 import org.everit.json.schema.ObjectSchema;
+import org.everit.json.schema.ReferenceSchema;
 import org.everit.json.schema.Schema;
 import org.everit.json.schema.ValidationException;
 import org.everit.json.schema.internal.RegexFormatValidator;
@@ -84,6 +91,16 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
             } else {
                 throw new InvalidJsonException(validationException);
             }
+        } else if ("oneOf".equalsIgnoreCase(validationException.getKeyword())) {
+            handleOneOfError(safeConfigurationJson, validationException);
+        } else if ("allOf".equalsIgnoreCase(validationException.getKeyword())) {
+            // In some complex cases, errors are raised under the allOf keyword, but we need to work with the causing exception
+            // It is acceptable right now to not use a true recursion, and only control a one level depth
+            if (!validationException.getCausingExceptions().isEmpty()) {
+                validationException.getCausingExceptions().forEach(cause -> checkAndUpdate(safeConfigurationJson, cause));
+            } else {
+                throw new InvalidJsonException(validationException);
+            }
         } else {
             throw new InvalidJsonException(validationException);
         }
@@ -113,6 +130,125 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
             return Optional.of(matcher.group(1));
         }
         return Optional.empty();
+    }
+
+    private void handleOneOfError(JSONObject config, ValidationException exception) {
+        CombinedSchema combinedSchema = (CombinedSchema) exception.getViolatedSchema();
+        String pointerToViolation = exception.getPointerToViolation();
+
+        // Navigate to the target object in the config
+        JSONObject targetObject = navigateToTarget(config, pointerToViolation);
+
+        // Find the matching subschema based on discriminator, or default to the first one
+        ObjectSchema matchingSubschema = findMatchingSubschema(combinedSchema, targetObject);
+
+        if (matchingSubschema == null) {
+            throw new InvalidJsonException(exception);
+        }
+
+        // Find and inject defaults from the matching subschema
+        Map<String, Object> defaults = findSubschemaDefaults(matchingSubschema, targetObject);
+
+        if (defaults.isEmpty()) {
+            throw new InvalidJsonException(exception);
+        }
+
+        for (Map.Entry<String, Object> entry : defaults.entrySet()) {
+            targetObject.put(entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * Finds the subschema that matches the discriminator value in the config.
+     * If no discriminator is found, returns the first subschema as default.
+     */
+    private ObjectSchema findMatchingSubschema(CombinedSchema schema, JSONObject config) {
+        ObjectSchema firstSubschema = null;
+
+        for (Schema subschema : schema.getSubschemas()) {
+            ObjectSchema objSchema = unwrapToObjectSchema(subschema);
+            if (objSchema == null) {
+                continue;
+            }
+
+            if (firstSubschema == null) {
+                firstSubschema = objSchema;
+            }
+
+            // Check if this subschema has a const property that matches a value in config
+            for (Map.Entry<String, Schema> entry : objSchema.getPropertySchemas().entrySet()) {
+                String propName = entry.getKey();
+                Schema propSchema = unwrapSchema(entry.getValue());
+
+                if (propSchema instanceof ConstSchema) {
+                    Object constValue = ((ConstSchema) propSchema).getPermittedValue();
+                    // If config has this property with the matching const value, this is our subschema
+                    if (config.has(propName) && constValue.equals(config.get(propName))) {
+                        return objSchema;
+                    }
+                }
+            }
+        }
+
+        // No discriminator found in config, return the first subschema as default
+        return firstSubschema;
+    }
+
+    /**
+     * Finds all defaults to inject for a given subschema:
+     * - const values for properties not in config (discriminators)
+     * - default values for required properties not in config
+     */
+    private Map<String, Object> findSubschemaDefaults(ObjectSchema subschema, JSONObject config) {
+        Map<String, Object> result = new HashMap<>();
+        Set<String> requiredProps = new HashSet<>(subschema.getRequiredProperties());
+
+        for (Map.Entry<String, Schema> entry : subschema.getPropertySchemas().entrySet()) {
+            String propName = entry.getKey();
+            Schema propSchema = unwrapSchema(entry.getValue());
+
+            // Skip if already in config
+            if (config.has(propName)) {
+                continue;
+            }
+
+            // Inject const values (discriminators)
+            if (propSchema instanceof ConstSchema) {
+                result.put(propName, ((ConstSchema) propSchema).getPermittedValue());
+            }
+            // Inject default values for required properties
+            else if (requiredProps.contains(propName) && propSchema != null && propSchema.hasDefaultValue()) {
+                result.put(propName, propSchema.getDefaultValue());
+            }
+        }
+
+        return result;
+    }
+
+    private Schema unwrapSchema(Schema schema) {
+        if (schema instanceof ReferenceSchema) {
+            return ((ReferenceSchema) schema).getReferredSchema();
+        }
+        return schema;
+    }
+
+    private ObjectSchema unwrapToObjectSchema(Schema schema) {
+        Schema unwrapped = unwrapSchema(schema);
+        return (unwrapped instanceof ObjectSchema) ? (ObjectSchema) unwrapped : null;
+    }
+
+    private JSONObject navigateToTarget(JSONObject root, String pointer) {
+        if ("#".equals(pointer) || pointer.isEmpty()) {
+            return root;
+        }
+        String[] parts = pointer.replaceFirst("^#/?", "").split("/");
+        JSONObject current = root;
+        for (String part : parts) {
+            if (!part.isEmpty() && current.has(part)) {
+                current = current.getJSONObject(part);
+            }
+        }
+        return current;
     }
 
     private static Schema buildSchema(JSONObject schemaJson) {

@@ -1,0 +1,38 @@
+{
+    "type": "object",
+    "properties": {
+        "http": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "protocol": {
+                            "type": "string",
+                            "enum": ["HTTP1", "HTTP2"],
+                            "default": "HTTP1"
+                        },
+                        "keepAlive": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": ["protocol"]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "protocol": {
+                            "type": "string",
+                            "enum": ["HTTP1", "HTTP2"],
+                            "default": "HTTP1"
+                        },
+                        "timeout": {
+                            "type": "integer"
+                        }
+                    },
+                    "required": ["protocol"]
+                }
+            ]
+        }
+    },
+    "required": ["http"]
+}

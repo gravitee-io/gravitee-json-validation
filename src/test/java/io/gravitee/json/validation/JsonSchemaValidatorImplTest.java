@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.concurrent.*;
 import org.everit.json.schema.Schema;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -59,6 +60,12 @@ class JsonSchemaValidatorImplTest {
         "src/test/resources/schema_additional_properties_pattern_properties.json";
     public static final String SCHEMA_WITH_CUSTOM_REGEX = "src/test/resources/schema_custom_regex.json";
     public static final String SCHEMA_WITH_ALLOF_AND_DEFAULT_VALUE = "src/test/resources/schema_allof_default_value.json";
+    public static final String SCHEMA_WITH_ONEOF_AND_DEFAULT_VALUE = "src/test/resources/schema_oneof_default_value.json";
+    public static final String SCHEMA_WITH_ONEOF_NO_COMMON_DEFAULT = "src/test/resources/schema_oneof_no_common_default.json";
+    public static final String SCHEMA_WITH_ONEOF_PARTIAL_REQUIRED = "src/test/resources/schema_oneof_partial_required.json";
+    public static final String SCHEMA_WITH_ALLOF_WRAPPING_ONEOF = "src/test/resources/schema_allof_wrapping_oneof.json";
+    public static final String SCHEMA_WITH_REF_TO_ONEOF = "src/test/resources/schema_real_case.json";
+    public static final String SCHEMA_WITH_ONEOF_MULTIPLE_MATCH = "src/test/resources/schema_oneof_multiple_match.json";
 
     JsonSchemaValidator validator = new JsonSchemaValidatorImpl();
 
@@ -113,6 +120,114 @@ class JsonSchemaValidatorImplTest {
         String json = "{\"citizenship\": \"FR\"}";
         String result = validator.validate(schema, json);
         assertThat(result).isEqualTo("{\"citizenship\":\"FR\",\"status\":\"A\"}");
+    }
+
+    @Test
+    void should_return_updated_json_required_default_value_with_oneOf() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_AND_DEFAULT_VALUE));
+
+        // Missing "protocol" in nested "http" object - should inject default "HTTP1"
+        String json =
+            """
+            {
+                "http": {
+                    "keepAlive": true
+                }
+            }
+            """;
+        String result = validator.validate(schema, json);
+        assertThat(result).isEqualTo("{\"http\":{\"protocol\":\"HTTP1\",\"keepAlive\":true}}");
+    }
+
+    @Test
+    void should_throw_exception_when_oneOf_has_no_common_required_defaults() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_NO_COMMON_DEFAULT));
+
+        // No common required properties between subschemas, should throw
+        assertThatThrownBy(() -> validator.validate(schema, "{}")).isInstanceOf(InvalidJsonException.class);
+    }
+
+    @Test
+    void should_only_inject_common_required_defaults_in_oneOf() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_PARTIAL_REQUIRED));
+
+        // "common" is required in both subschemas -> should be injected
+        // "onlyInFirst" is required only in first subschema -> should NOT be injected
+        // "onlyInSecond" is required only in second subschema -> should NOT be injected
+        String json = """
+            {
+                "onlyInFirst": "provided"
+            }
+            """;
+        String result = validator.validate(schema, json);
+
+        // Only "common" should be added, not "onlyInSecond"
+        assertThat(result).contains("\"common\":\"defaultCommon\"");
+        assertThat(result).contains("\"onlyInFirst\":\"provided\"");
+        assertThat(result).doesNotContain("onlyInSecond");
+    }
+
+    @Test
+    void should_return_updated_json_when_allOf_wraps_oneOf_with_missing_required_defaults() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_ALLOF_WRAPPING_ONEOF));
+
+        // "readTimeout" is required in both oneOf subschemas and has a default value
+        // The oneOf is wrapped inside an allOf, so we need to traverse the causingExceptions
+        String json =
+            """
+            {
+                "http": {
+                    "version": "HTTP_1_1"
+                }
+            }
+            """;
+        String result = validator.validate(schema, json);
+
+        // "readTimeout" should be injected with its default value 10000
+        assertThat(result).contains("\"readTimeout\":10000");
+        assertThat(result).contains("\"version\":\"HTTP_1_1\"");
+    }
+
+    @Test
+    void should_return_updated_json_when_ref_to_oneof_with_missing_required_defaults() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_REF_TO_ONEOF));
+
+        // "readTimeout" is missing but has a default value in the schema
+        // The schema uses $ref to a definition containing oneOf with "type": "object"
+        // This creates an internal allOf (type + oneOf) that wraps the oneOf error
+        String json =
+            """
+            {
+                "http": {
+                    "connectTimeout": 5000
+                }
+            }
+            """;
+        String result = validator.validate(schema, json);
+
+        // "readTimeout" should be injected with its default value 10000
+        assertThat(result).contains("\"readTimeout\":10000");
+    }
+
+    @Test
+    void should_default_to_first_subschema_when_multiple_oneOf_match() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_MULTIPLE_MATCH));
+
+        // When no "type" is provided, both subschemas would match (they only differ by const value)
+        // The validator should default to the first subschema and inject its const value
+        String json =
+            """
+            {
+                "config": {
+                    "timeout": 5000
+                }
+            }
+            """;
+        String result = validator.validate(schema, json);
+
+        // Should inject "type": "TYPE_A" from the first subschema
+        assertThat(result).contains("\"type\":\"TYPE_A\"");
+        assertThat(result).contains("\"timeout\":5000");
     }
 
     @Test
@@ -225,5 +340,104 @@ class JsonSchemaValidatorImplTest {
         assertThat(finished).as("Test threads timed out").isTrue();
         assertThat(errorReference.get()).as("Validation failed in a concurrent thread").isNull();
         assertThat(cacheSize()).isEqualTo(1);
+    }
+
+    // ---------------- OneOf with discriminator and required fields ----------------
+
+    @Nested
+    class OneOfDiscriminatorWithRequiredFields {
+
+        private static final String SCHEMA_PATH = "src/test/resources/schema_oneof_discriminator_with_required.json";
+
+        /*
+         * Schema structure:
+         * - HTTP Endpoint (first): type=HTTP (const), connectTimeout (default 5000), readTimeout (default 10000), keepAliveTimeout (default 30000)
+         *   Required: type, connectTimeout, readTimeout, keepAliveTimeout
+         *
+         * - GRPC Endpoint (second): type=GRPC (const), port (default 443), connectTimeout (default 3000), readTimeout (default 5000)
+         *   Required: type, connectTimeout, readTimeout, port
+         *
+         * Common required: type, connectTimeout, readTimeout
+         * HTTP-only required: keepAliveTimeout
+         * GRPC-only required: port
+         */
+
+        @Test
+        void should_choose_first_subschema_and_inject_required_defaults_when_no_discriminator() throws IOException {
+            String schema = Files.readString(Path.of(SCHEMA_PATH));
+
+            // No discriminator (type) provided, no required fields
+            // Should default to first subschema (HTTP) and inject its const + required defaults
+            String json = """
+                {
+                    "endpoint": {}
+                }
+                """;
+            String result = validator.validate(schema, json);
+
+            // Should have HTTP type (const from first subschema)
+            assertThat(result).contains("\"type\":\"HTTP\"");
+            // Should have HTTP defaults
+            assertThat(result).contains("\"connectTimeout\":5000");
+            assertThat(result).contains("\"readTimeout\":10000");
+            // Should have HTTP-specific field
+            assertThat(result).contains("\"keepAliveTimeout\":30000");
+            // Should NOT have GRPC-specific field
+            assertThat(result).doesNotContain("\"port\"");
+        }
+
+        @Test
+        void should_inject_required_defaults_when_first_subschema_discriminator_provided() throws IOException {
+            String schema = Files.readString(Path.of(SCHEMA_PATH));
+
+            // Discriminator for first subschema (HTTP) provided
+            // Should inject HTTP required defaults
+            String json =
+                """
+                {
+                    "endpoint": {
+                        "type": "HTTP"
+                    }
+                }
+                """;
+            String result = validator.validate(schema, json);
+
+            // Should keep HTTP type
+            assertThat(result).contains("\"type\":\"HTTP\"");
+            // Should have HTTP defaults
+            assertThat(result).contains("\"connectTimeout\":5000");
+            assertThat(result).contains("\"readTimeout\":10000");
+            // Should have HTTP-specific field
+            assertThat(result).contains("\"keepAliveTimeout\":30000");
+            // Should NOT have GRPC-specific field
+            assertThat(result).doesNotContain("\"port\"");
+        }
+
+        @Test
+        void should_inject_required_defaults_when_second_subschema_discriminator_provided() throws IOException {
+            String schema = Files.readString(Path.of(SCHEMA_PATH));
+
+            // Discriminator for second subschema (GRPC) provided
+            // Should inject GRPC required defaults
+            String json =
+                """
+                {
+                    "endpoint": {
+                        "type": "GRPC"
+                    }
+                }
+                """;
+            String result = validator.validate(schema, json);
+
+            // Should keep GRPC type
+            assertThat(result).contains("\"type\":\"GRPC\"");
+            // Should have GRPC defaults
+            assertThat(result).contains("\"connectTimeout\":3000");
+            assertThat(result).contains("\"readTimeout\":5000");
+            // Should have GRPC-specific field with its default
+            assertThat(result).contains("\"port\":443");
+            // Should NOT have HTTP-specific field
+            assertThat(result).doesNotContain("\"keepAliveTimeout\"");
+        }
     }
 }

@@ -1,3 +1,10 @@
+# [2.2.0](https://github.com/gravitee-io/gravitee-json-validation/compare/2.1.0...2.2.0) (2026-02-13)
+
+
+### Features
+
+* improve violation tolerance to update default values ([3d41e93](https://github.com/gravitee-io/gravitee-json-validation/commit/3d41e93f07afe040986e7a920d4cb6dc252514c4))
+
 # [2.1.0](https://github.com/gravitee-io/gravitee-json-validation/compare/2.0.2...2.1.0) (2025-11-21)
 
 

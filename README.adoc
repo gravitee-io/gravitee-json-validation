@@ -7,4 +7,195 @@ image:https://f.hubspotusercontent40.net/hubfs/7600448/gravitee-github-button.jp
 
 
 == Description
-This library provides a JSON validation service based on the JSON Schema specification.
+
+This library provides a JSON validation service based on the JSON Schema specification (draft-07).
+It is built on top of the https://github.com/everit-org/json-schema[everit-org/json-schema] library with additional features specific to Gravitee's needs.
+
+== Usage
+
+[source,java]
+----
+JsonSchemaValidator validator = new JsonSchemaValidatorImpl();
+String validatedJson = validator.validate(schemaString, jsonString);
+----
+
+The `validate` method returns the validated (and potentially modified) JSON string.
+If validation fails and cannot be auto-corrected, an `InvalidJsonException` is thrown.
+
+== Features
+
+=== Schema Caching
+
+Parsed schemas are cached using Caffeine with a maximum size of 1000 entries.
+This improves performance when the same schema is used for multiple validations.
+
+=== Null Values Removal
+
+Before validation, all `null` values are automatically removed from the JSON input.
+This prevents issues when updating configurations that may contain explicit null entries.
+
+=== Default Values Injection
+
+When `useDefaults` is enabled (which is the default), the validator automatically injects default values for missing required properties.
+
+==== Simple required properties
+
+If a required property is missing but has a `default` value defined in the schema, the default value is injected.
+
+[source,json]
+----
+// Schema
+{
+  "type": "object",
+  "properties": {
+    "timeout": { "type": "integer", "default": 5000 }
+  },
+  "required": ["timeout"]
+}
+
+// Input: {}
+// Output: {"timeout": 5000}
+----
+
+==== Nested objects
+
+Default values are also injected for nested objects.
+
+[source,json]
+----
+// Schema with nested defaults
+{
+  "properties": {
+    "http": {
+      "type": "object",
+      "properties": {
+        "connectTimeout": { "type": "integer", "default": 3000 }
+      },
+      "required": ["connectTimeout"]
+    }
+  }
+}
+
+// Input: {"http": {}}
+// Output: {"http": {"connectTimeout": 3000}}
+----
+
+=== Additional Properties Removal
+
+When a schema has `additionalProperties: false`, any extra properties not defined in the schema are automatically removed from the JSON instead of failing validation.
+
+[source,json]
+----
+// Schema
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "additionalProperties": false
+}
+
+// Input: {"name": "test", "unknown": "value"}
+// Output: {"name": "test"}
+----
+
+Properties matching `patternProperties` are preserved.
+
+=== oneOf Handling
+
+The validator provides smart handling for `oneOf` schemas with automatic subschema detection and default value injection.
+
+==== How it works
+
+1. **Discriminator detection**: The validator looks for `const` properties in each subschema. If the input config contains a value matching a `const`, that subschema is selected.
+2. **Default fallback**: If no discriminator is found in the config, the **first subschema** is selected by default.
+3. **Default injection**: Missing `const` values (discriminators) and missing required properties with defaults are injected from the selected subschema.
+
+==== Example with discriminator provided
+
+[source,json]
+----
+// Schema with oneOf
+{
+  "oneOf": [
+    {
+      "properties": {
+        "type": { "const": "HTTP" },
+        "connectTimeout": { "type": "integer", "default": 5000 },
+        "keepAlive": { "type": "integer", "default": 30000 }
+      },
+      "required": ["type", "connectTimeout", "keepAlive"]
+    },
+    {
+      "properties": {
+        "type": { "const": "GRPC" },
+        "connectTimeout": { "type": "integer", "default": 3000 },
+        "port": { "type": "integer", "default": 443 }
+      },
+      "required": ["type", "connectTimeout", "port"]
+    }
+  ]
+}
+
+// Input with GRPC discriminator
+// Input: {"type": "GRPC"}
+// Output: {"type": "GRPC", "connectTimeout": 3000, "port": 443}
+
+// Input with HTTP discriminator
+// Input: {"type": "HTTP"}
+// Output: {"type": "HTTP", "connectTimeout": 5000, "keepAlive": 30000}
+----
+
+==== Example without discriminator (defaults to first subschema)
+
+[source,json]
+----
+// Using the same schema as above
+
+// Input without discriminator
+// Input: {}
+// Output: {"type": "HTTP", "connectTimeout": 5000, "keepAlive": 30000}
+----
+
+The first subschema (HTTP) is selected by default, and all its required defaults are injected, including the `const` discriminator value.
+
+=== allOf Handling
+
+For complex schemas where `allOf` wraps other constructs (like `oneOf`), the validator traverses the causing exceptions to handle nested validation errors properly.
+
+This is common when using `$ref` to definitions that combine `type: object` with `oneOf`.
+
+=== Custom Regex Format Validator
+
+The library supports both `regex` and `java-regex` format validators for validating Java regular expression patterns in string values.
+
+[source,json]
+----
+{
+  "properties": {
+    "pattern": {
+      "type": "string",
+      "format": "java-regex"
+    }
+  }
+}
+----
+
+== Error Handling
+
+When validation fails and cannot be auto-corrected, an `InvalidJsonException` is thrown with a detailed message about the validation error.
+
+[source,java]
+----
+try {
+    validator.validate(schema, json);
+} catch (InvalidJsonException e) {
+    // e.getMessage() contains the validation error details
+}
+----
+
+== Dependencies
+
+* https://github.com/everit-org/json-schema[everit-org/json-schema] - JSON Schema validation
+* https://github.com/ben-manes/caffeine[Caffeine] - High performance caching
+* https://github.com/FasterXML/jackson[Jackson] - JSON processing

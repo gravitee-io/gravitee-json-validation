@@ -146,7 +146,13 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
             throw new InvalidJsonException(exception);
         }
 
-        // Find and inject defaults from the matching subschema
+        // Check if the validator already injected defaults via in-place mutation.
+        // If so, we can skip manual injection to avoid redundancy.
+        boolean validatorPrefilledDefaults = validatorPrefilledDefaults(matchingSubschema, targetObject);
+        if (validatorPrefilledDefaults) {
+            return;
+        }
+
         Map<String, Object> defaults = findSubschemaDefaults(matchingSubschema, targetObject);
 
         if (defaults.isEmpty()) {
@@ -156,6 +162,57 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
         for (Map.Entry<String, Object> entry : defaults.entrySet()) {
             targetObject.put(entry.getKey(), entry.getValue());
         }
+    }
+
+    /**
+     * Checks whether all required properties and const constraints of the given subschema
+     * are already satisfied by the target JSON object — without injecting any defaults.
+     *
+     * <h3>Why this works</h3>
+     * {@code useDefaults(true)} in {@link #buildSchema} mutates {@code safeConfigurationJson}
+     * in-place during validation. Even when {@code oneOf} fails, the inner {@code allOf}
+     * subschemas are still fully evaluated and their defaults injected automatically into the live
+     * {@code JSONObject} instance.
+     *
+     * <h3>Implicit assumptions</h3>
+     * This method relies on two internal everit-json-schema behaviors that are not part
+     * of its public contract:
+     * <ul>
+     *   <li><b>Non-fail-fast allOf:</b> everit validates all {@code allOf} subschemas
+     *       regardless of intermediate failures, ensuring defaults are always injected.</li>
+     *   <li><b>In-place mutation:</b> {@code useDefaults} mutates the original
+     *       {@code JSONObject} instance rather than a defensive copy, so injected defaults
+     *       are visible outside the validation call.</li>
+     * </ul>
+     *
+     * <h3>Risk of silent regression</h3>
+     * If everit ever switches to snapshot-based validation, {@code useDefaults} would inject defaults
+     * into a copy rather than the original {@code safeConfigurationJson}. This method would then return
+     * {@code false} for previously valid input causing silent regression with no compile-time signal.
+     *
+     * @param matchingSubschema the {@code oneOf} subschema identified as the best match
+     * @param targetObject      the JSON object being validated, potentially already mutated
+     *                          by {@code useDefaults} during the preceding validation pass
+     * @return {@code true} if all required properties are present and all const constraints
+     *         are satisfied; {@code false} if manual default injection is still needed
+     */
+    private boolean validatorPrefilledDefaults(ObjectSchema matchingSubschema, JSONObject targetObject) {
+        if (!matchingSubschema.getRequiredProperties().stream().allMatch(targetObject::has)) {
+            return false; // short-circuit
+        }
+
+        return matchingSubschema
+            .getPropertySchemas()
+            .entrySet()
+            .stream()
+            .allMatch(e -> {
+                Schema unwrapped = unwrapSchema(e.getValue()); // unwrap once
+                if (!(unwrapped instanceof ConstSchema)) {
+                    return true; // non-const properties are not discriminators, skip
+                }
+                Object constVal = ((ConstSchema) unwrapped).getPermittedValue();
+                return targetObject.has(e.getKey()) && constVal.equals(targetObject.get(e.getKey()));
+            });
     }
 
     /**

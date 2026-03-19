@@ -109,7 +109,8 @@ The validator provides smart handling for `oneOf` schemas with automatic subsche
 
 1. **Discriminator detection**: The validator looks for `const` properties in each subschema. If the input config contains a value matching a `const`, that subschema is selected.
 2. **Default fallback**: If no discriminator is found in the config, the **first subschema** is selected by default.
-3. **Default injection**: Missing `const` values (discriminators) and missing required properties with defaults are injected from the selected subschema.
+3. **Validator pre-filling fallback**: checks whether all required properties and const constraints of the given subschema are already satisfied by the target JSON object — without injecting any defaults. With `useDefaults` enabled, the validator mutates original json in-place during validation.
+4. **Default injection**: Missing `const` values (discriminators) and missing required properties with defaults are injected from the selected subschema.
 
 ==== Example with discriminator provided
 
@@ -158,6 +159,57 @@ The validator provides smart handling for `oneOf` schemas with automatic subsche
 ----
 
 The first subschema (HTTP) is selected by default, and all its required defaults are injected, including the `const` discriminator value.
+
+==== Example with discriminator and defaults in root schema
+
+[source,json]
+----
+// Schema with oneOf and default in root
+{
+    "type": "object",
+    "properties": {
+        "partyType": {
+            "type": "string",
+            "default": "COMPANY",
+            "enum": ["COMPANY", "NATURAL"]
+        },
+        "name": {
+            "type": "string",
+            "default": "ACME"
+        }
+    },
+    "oneOf": [
+        {
+            "properties": {
+                "partyType": {
+                    "const": "NATURAL"
+                }
+            },
+            "required": ["partyType"]
+        },
+        {
+            "properties": {
+                "partyType": {
+                    "const": "COMPANY"
+                }
+            },
+            "required": ["partyType", "name"]
+        },
+        {
+            "not": {
+                "required": ["partyType"]
+            },
+            "required": ["name"]
+        }
+    ]
+}
+
+
+// Input: {}
+// Output: {"name":"ACME","partyType":"COMPANY"}
+----
+
+All required fields with default values are populated, even if they were not specified in the input data.
 
 === allOf Handling
 

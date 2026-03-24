@@ -1,3 +1,10 @@
+# [2.3.0](https://github.com/gravitee-io/gravitee-json-validation/compare/2.2.0...2.3.0) (2026-03-24)
+
+
+### Features
+
+* improve violation tolerance to use root default values for oneOf ([#33](https://github.com/gravitee-io/gravitee-json-validation/issues/33)) ([e9cd1f5](https://github.com/gravitee-io/gravitee-json-validation/commit/e9cd1f52b191bcbddc12132f0e24a69d6c3638d8))
+
 # [2.2.0](https://github.com/gravitee-io/gravitee-json-validation/compare/2.1.0...2.2.0) (2026-02-13)
 
 

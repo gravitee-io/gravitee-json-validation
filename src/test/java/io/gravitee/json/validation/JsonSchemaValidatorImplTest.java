@@ -66,6 +66,8 @@ class JsonSchemaValidatorImplTest {
     public static final String SCHEMA_WITH_ALLOF_WRAPPING_ONEOF = "src/test/resources/schema_allof_wrapping_oneof.json";
     public static final String SCHEMA_WITH_REF_TO_ONEOF = "src/test/resources/schema_real_case.json";
     public static final String SCHEMA_WITH_ONEOF_MULTIPLE_MATCH = "src/test/resources/schema_oneof_multiple_match.json";
+    public static final String SCHEMA_WITH_ONEOF_REQUIRED_WITH_ROOT_DEFAULTS =
+        "src/test/resources/schema_oneof_required_with_root_defaults.json";
 
     JsonSchemaValidator validator = new JsonSchemaValidatorImpl();
 
@@ -228,6 +230,22 @@ class JsonSchemaValidatorImplTest {
         // Should inject "type": "TYPE_A" from the first subschema
         assertThat(result).contains("\"type\":\"TYPE_A\"");
         assertThat(result).contains("\"timeout\":5000");
+    }
+
+    @Test
+    void should_inject_root_default_when_discriminator_matches_subschema_oneof() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_REQUIRED_WITH_ROOT_DEFAULTS));
+        String json = "{\n" + "  \"partyType\": \"NATURAL\",\n" + "}";
+        String result = validator.validate(schema, json);
+        assertThat(result).isEqualTo("{\"name\":\"ACME\",\"partyType\":\"NATURAL\"}");
+    }
+
+    @Test
+    void should_inject_root_defaults_when_input_empty_oneof() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_REQUIRED_WITH_ROOT_DEFAULTS));
+        String json = "{\n}";
+        String result = validator.validate(schema, json);
+        assertThat(result).isEqualTo("{\"name\":\"ACME\",\"partyType\":\"COMPANY\"}");
     }
 
     @Test

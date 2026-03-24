@@ -1,0 +1,38 @@
+{
+    "type": "object",
+    "properties": {
+        "partyType": {
+            "type": "string",
+            "default": "COMPANY",
+            "enum": ["COMPANY", "NATURAL"]
+        },
+        "name": {
+            "type": "string",
+            "default": "ACME"
+        }
+    },
+    "oneOf": [
+        {
+            "properties": {
+                "partyType": {
+                    "const": "NATURAL"
+                }
+            },
+            "required": ["partyType"]
+        },
+        {
+            "properties": {
+                "partyType": {
+                    "const": "COMPANY"
+                }
+            },
+            "required": ["partyType", "name"]
+        },
+        {
+            "not": {
+                "required": ["partyType"]
+            },
+            "required": ["name"]
+        }
+    ]
+}

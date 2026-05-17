@@ -15,19 +15,13 @@
  */
 package io.gravitee.json.validation;
 
-import org.everit.json.schema.ValidationException;
-
 public class InvalidJsonException extends RuntimeException {
-
-    public InvalidJsonException(ValidationException validationException) {
-        this(getAllMessages(validationException));
-    }
 
     public InvalidJsonException(String message) {
         super(message);
     }
 
-    private static String getAllMessages(ValidationException validationException) {
-        return String.join("\n", validationException.getAllMessages());
+    public InvalidJsonException(String message, Throwable cause) {
+        super(message, cause);
     }
 }

@@ -28,6 +28,19 @@ If validation fails and cannot be auto-corrected, an `InvalidJsonException` is t
 
 Parsed schemas are cached using Caffeine with a maximum size of 1000 entries.
 This improves performance when the same schema is used for multiple validations.
+The cache is keyed on the parsed schema node (content-based), so schemas that differ only in whitespace or key order share a single entry.
+
+[NOTE]
+====
+The schema cache is a `static` field, so it is shared by all `JsonSchemaValidatorImpl` instances loaded by the same classloader and lives for the lifetime of that classloader (not a single validator instance).
+
+In a plugin / OSGi context this has two implications:
+
+* If this library is loaded by a *shared parent* classloader, the 1000-entry cache and its eviction are global across all plugins — one plugin's schemas compete for budget with another's.
+* Cache entries survive across plugin hot-reloads when the library lives in a classloader that outlives the plugin. This is not a correctness problem (the key is the schema content, so a changed schema yields a different entry), but cached `Schema` objects keep references alive — be mindful of this if you ever store caller-supplied objects in the cache, as it could pin a stale classloader.
+
+If you need cache lifetime scoped to a single validator instance, load the library in the plugin's own classloader, or fork the field to be non-`static`.
+====
 
 === Null Values Removal
 

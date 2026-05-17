@@ -107,12 +107,14 @@ class JsonSchemaValidatorImplTest {
 
         schema = Files.readString(Path.of(SCHEMA_WITH_NESTED_DEFAULT_VALUE));
         result = validator.validate(schema, "{\"additional-property\": true}");
-        assertThat(result)
-            .isEqualTo("{\"additional-property\":true,\"address\":{\"city\":\"Lille\"},\"citizenship\":\"France\",\"name\":\"John Doe\"}");
+        assertThat(result).isEqualTo(
+            "{\"additional-property\":true,\"address\":{\"city\":\"Lille\"},\"citizenship\":\"France\",\"name\":\"John Doe\"}"
+        );
 
         result = validator.validate(schema, "{\"additional-property\": true, \"address\": {}}");
-        assertThat(result)
-            .isEqualTo("{\"additional-property\":true,\"address\":{\"city\":\"Paris\"},\"citizenship\":\"France\",\"name\":\"John Doe\"}");
+        assertThat(result).isEqualTo(
+            "{\"additional-property\":true,\"address\":{\"city\":\"Paris\"},\"citizenship\":\"France\",\"name\":\"John Doe\"}"
+        );
     }
 
     @Test
@@ -129,8 +131,7 @@ class JsonSchemaValidatorImplTest {
         String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_AND_DEFAULT_VALUE));
 
         // Missing "protocol" in nested "http" object - should inject default "HTTP1"
-        String json =
-            """
+        String json = """
             {
                 "http": {
                     "keepAlive": true
@@ -175,8 +176,7 @@ class JsonSchemaValidatorImplTest {
 
         // "readTimeout" is required in both oneOf subschemas and has a default value
         // The oneOf is wrapped inside an allOf, so we need to traverse the causingExceptions
-        String json =
-            """
+        String json = """
             {
                 "http": {
                     "version": "HTTP_1_1"
@@ -197,8 +197,7 @@ class JsonSchemaValidatorImplTest {
         // "readTimeout" is missing but has a default value in the schema
         // The schema uses $ref to a definition containing oneOf with "type": "object"
         // This creates an internal allOf (type + oneOf) that wraps the oneOf error
-        String json =
-            """
+        String json = """
             {
                 "http": {
                     "connectTimeout": 5000
@@ -217,8 +216,7 @@ class JsonSchemaValidatorImplTest {
 
         // When no "type" is provided, both subschemas would match (they only differ by const value)
         // The validator should default to the first subschema and inject its const value
-        String json =
-            """
+        String json = """
             {
                 "config": {
                     "timeout": 5000
@@ -343,7 +341,8 @@ class JsonSchemaValidatorImplTest {
                 try {
                     start.await(5, java.util.concurrent.TimeUnit.SECONDS);
                     validator.validate(schema, json);
-                } catch (Throwable e) { // Catch Throwable to handle Errors too, not just Exceptions
+                } catch (Throwable e) {
+                    // Catch Throwable to handle Errors too, not just Exceptions
                     errorReference.set(e);
                 } finally {
                     done.countDown();
@@ -410,8 +409,7 @@ class JsonSchemaValidatorImplTest {
 
             // Discriminator for first subschema (HTTP) provided
             // Should inject HTTP required defaults
-            String json =
-                """
+            String json = """
                 {
                     "endpoint": {
                         "type": "HTTP"
@@ -437,8 +435,7 @@ class JsonSchemaValidatorImplTest {
 
             // Discriminator for second subschema (GRPC) provided
             // Should inject GRPC required defaults
-            String json =
-                """
+            String json = """
                 {
                     "endpoint": {
                         "type": "GRPC"

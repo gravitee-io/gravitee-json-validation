@@ -108,8 +108,7 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
     }
 
     private void updateProperty(String pointerToViolation, String key, Object value, JSONObject target) {
-        Arrays
-            .stream(pointerToViolation.split("/"))
+        Arrays.stream(pointerToViolation.split("/"))
             .filter(token -> !token.equals("properties") && !token.isEmpty())
             .map(property -> {
                 if (!property.equals("#")) {
@@ -309,8 +308,7 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
     }
 
     private static Schema buildSchema(JSONObject schemaJson) {
-        return SchemaLoader
-            .builder()
+        return SchemaLoader.builder()
             .useDefaults(true)
             .addFormatValidator(new JavaRegexValidator())
             .schemaJson(schemaJson)

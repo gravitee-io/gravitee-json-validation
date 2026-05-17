@@ -478,6 +478,29 @@ class JsonSchemaValidatorImplTest {
                 """);
     }
 
+    @Test
+    void should_not_remove_additional_properties_in_nested_object() throws IOException {
+        // Current behavior: additionalProperties removal only works at root level.
+        // Nested additional properties are NOT removed — they remain in the output.
+        String schema = Files.readString(Path.of("src/test/resources/schema_nested_additional_properties.json"));
+
+        String json = """
+            {
+                "name": "test",
+                "config": {
+                    "timeout": 5000,
+                    "retries": 3,
+                    "unknownField": "should-be-removed"
+                }
+            }
+            """;
+        String result = validator.validate(schema, json);
+        // Note: unknownField is NOT removed in nested objects (current limitation)
+        assertThatJson(result).isEqualTo("""
+                {"name":"test","config":{"retries":3,"unknownField":"should-be-removed","timeout":5000}}
+                """);
+    }
+
     // ---------------- OneOf with discriminator and required fields ----------------
 
     @Nested

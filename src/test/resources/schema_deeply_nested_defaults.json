@@ -1,0 +1,47 @@
+{
+    "type": "object",
+    "properties": {
+        "level1": {
+            "type": "object",
+            "properties": {
+                "level2": {
+                    "type": "object",
+                    "properties": {
+                        "level3": {
+                            "type": "object",
+                            "properties": {
+                                "value": {
+                                    "type": "string",
+                                    "default": "deep-default"
+                                }
+                            },
+                            "required": ["value"],
+                            "default": {
+                                "value": "deep-default"
+                            }
+                        }
+                    },
+                    "required": ["level3"],
+                    "default": {
+                        "level3": {
+                            "value": "deep-default"
+                        }
+                    }
+                }
+            },
+            "required": ["level2"],
+            "default": {
+                "level2": {
+                    "level3": {
+                        "value": "deep-default"
+                    }
+                }
+            }
+        },
+        "topField": {
+            "type": "string",
+            "default": "top-default"
+        }
+    },
+    "required": ["level1", "topField"]
+}

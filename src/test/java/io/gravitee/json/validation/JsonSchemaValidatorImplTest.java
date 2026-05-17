@@ -501,6 +501,27 @@ class JsonSchemaValidatorImplTest {
                 """);
     }
 
+    @Test
+    void should_clear_nulls_and_inject_defaults() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_DEFAULT_VALUE));
+
+        // "citizenship" is null (will be cleared) and has a default "USA"
+        // "name" is provided, "age" is null (will be cleared, not required)
+        String json = """
+            {
+                "name": "John",
+                "age": null,
+                "citizenship": null
+            }
+            """;
+        String result = validator.validate(schema, json);
+
+        // null values should be cleared first, then defaults injected
+        assertThatJson(result).isEqualTo("""
+                {"citizenship":"USA","name":"John"}
+                """);
+    }
+
     // ---------------- OneOf with discriminator and required fields ----------------
 
     @Nested

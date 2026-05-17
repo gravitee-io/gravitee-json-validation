@@ -410,6 +410,21 @@ class JsonSchemaValidatorImplTest {
         assertThat(cacheSize()).isOne();
     }
 
+    // ---------------- Characterization tests (migration safety net) ----------------
+
+    @Test
+    void should_throw_when_multiple_required_fields_missing_without_defaults() throws IOException {
+        String schema = Files.readString(Path.of("src/test/resources/schema_multiple_required_no_defaults.json"));
+
+        assertThatThrownBy(() -> validator.validate(schema, "{}"))
+            .isInstanceOf(InvalidJsonException.class)
+            .satisfies(ex -> {
+                String message = ex.getMessage();
+                // Current behavior: at least one missing required field is reported
+                assertThat(message).containsAnyOf("firstName", "lastName", "email");
+            });
+    }
+
     // ---------------- OneOf with discriminator and required fields ----------------
 
     @Nested

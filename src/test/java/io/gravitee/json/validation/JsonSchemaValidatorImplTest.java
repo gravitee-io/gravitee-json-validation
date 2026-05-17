@@ -452,8 +452,30 @@ class JsonSchemaValidatorImplTest {
             }
             """;
         String result = validator.validate(schema, json);
-        assertThat(result).contains("\"value\":\"deep-default\"");
-        assertThat(result).contains("\"topField\":\"provided\"");
+        assertThatJson(result).isEqualTo("""
+                {"topField":"provided","level1":{"level2":{"level3":{}}},"level3":{"value":"deep-default"},"level2":{}}
+                """);
+    }
+
+    @Test
+    void should_inject_defaults_when_ref_to_oneof_with_second_subschema_discriminator() throws IOException {
+        String schema = Files.readString(Path.of(SCHEMA_WITH_REF_TO_ONEOF));
+
+        // Discriminator for second subschema (HTTP_2) provided
+        // "readTimeout" and "connectTimeout" are missing but have defaults via $ref
+        String json = """
+            {
+                "http": {
+                    "version": "HTTP_2"
+                }
+            }
+            """;
+        String result = validator.validate(schema, json);
+
+        // Should keep the discriminator value and inject defaults from $ref definitions
+        assertThatJson(result).isEqualTo("""
+                {"http":{"readTimeout":10000,"connectTimeout":3000,"version":"HTTP_2"}}
+                """);
     }
 
     // ---------------- OneOf with discriminator and required fields ----------------

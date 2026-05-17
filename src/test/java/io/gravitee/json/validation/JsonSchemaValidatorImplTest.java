@@ -425,6 +425,37 @@ class JsonSchemaValidatorImplTest {
             });
     }
 
+    @Test
+    void should_inject_defaults_in_deeply_nested_schema() throws IOException {
+        String schema = Files.readString(Path.of("src/test/resources/schema_deeply_nested_defaults.json"));
+
+        // Empty object — all defaults at 3+ levels should be injected
+        String result = validator.validate(schema, "{}");
+        assertThatJson(result).isEqualTo("""
+                {"topField":"top-default","level1":{"level2":{"level3":{"value":"deep-default"}}}}
+                """);
+    }
+
+    @Test
+    void should_inject_defaults_at_deepest_level_when_parents_exist() throws IOException {
+        String schema = Files.readString(Path.of("src/test/resources/schema_deeply_nested_defaults.json"));
+
+        // Parents exist but deepest value is missing
+        String json = """
+            {
+                "level1": {
+                    "level2": {
+                        "level3": {}
+                    }
+                },
+                "topField": "provided"
+            }
+            """;
+        String result = validator.validate(schema, json);
+        assertThat(result).contains("\"value\":\"deep-default\"");
+        assertThat(result).contains("\"topField\":\"provided\"");
+    }
+
     // ---------------- OneOf with discriminator and required fields ----------------
 
     @Nested

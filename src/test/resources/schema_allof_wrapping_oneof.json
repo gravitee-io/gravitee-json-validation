@@ -20,7 +20,7 @@
                             "properties": {
                                 "readTimeout": {
                                     "type": "integer",
-                                    "default": 10000
+                                    "default": 5000
                                 },
                                 "version": {
                                     "type": "string",

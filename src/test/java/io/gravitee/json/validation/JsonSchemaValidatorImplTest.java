@@ -15,6 +15,7 @@
  */
 package io.gravitee.json.validation;
 
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -22,7 +23,9 @@ import com.github.benmanes.caffeine.cache.Cache;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.everit.json.schema.Schema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -79,20 +82,33 @@ class JsonSchemaValidatorImplTest {
     @Test
     void should_return_json_content_when_valid() throws IOException {
         String schema = Files.readString(Path.of(SIMPLE_SCHEMA));
-        String json = "{\n" + "  \"name\": \"John\",\n" + "  \"age\": 30\n" + "}";
+        String json = """
+            { "name": "John",  "age": 30 }""";
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"name\":\"John\",\"age\":30}");
+        assertThatJson(result).isEqualTo(json);
     }
 
     @Test
     void should_throw_exception_when_invalid() throws IOException {
         String schema = Files.readString(Path.of(SCHEMA_WITH_DEFAULT_VALUE));
 
-        assertThatThrownBy(() -> validator.validate(schema, "{\n" + " \"age\": 30,\n" + "  \"citizenship\": \"FR\"\n" + "}"))
+        assertThatThrownBy(() ->
+            validator.validate(
+                schema,
+                """
+                { "age": 30, "citizenship": "FR" }"""
+            )
+        )
             .isInstanceOf(InvalidJsonException.class)
             .hasMessage("#: required key [name] not found");
 
-        assertThatThrownBy(() -> validator.validate(schema, "{\n" + "  \"name\": \"John\",\n" + " \"age\": true\n" + "}"))
+        assertThatThrownBy(() ->
+            validator.validate(
+                schema,
+                """
+                { "name": "John", "age": true }"""
+            )
+        )
             .isInstanceOf(InvalidJsonException.class)
             .hasMessage("#/age: expected type: Integer, found: Boolean");
     }
@@ -101,19 +117,29 @@ class JsonSchemaValidatorImplTest {
     void should_return_updated_json_required_default_value_missing() throws IOException {
         String schema = Files.readString(Path.of(SCHEMA_WITH_DEFAULT_VALUE));
 
-        String json = "{\n" + "  \"name\": \"John\",\n" + "  \"age\": 30\n" + "}";
+        String json = """
+            { "name": "John",  "age": 30 }""";
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"citizenship\":\"USA\",\"name\":\"John\",\"age\":30}");
+        assertThatJson(result).isEqualTo(
+            """
+            {"citizenship":"USA","name":"John","age":30}"""
+        );
 
         schema = Files.readString(Path.of(SCHEMA_WITH_NESTED_DEFAULT_VALUE));
         result = validator.validate(schema, "{\"additional-property\": true}");
-        assertThat(result).isEqualTo(
-            "{\"additional-property\":true,\"address\":{\"city\":\"Lille\"},\"citizenship\":\"France\",\"name\":\"John Doe\"}"
+        assertThatJson(result).isEqualTo(
+            """
+            {"additional-property":true,"address":{"city":"Lille"},"citizenship":"France","name":"John Doe"}"""
         );
 
-        result = validator.validate(schema, "{\"additional-property\": true, \"address\": {}}");
-        assertThat(result).isEqualTo(
-            "{\"additional-property\":true,\"address\":{\"city\":\"Paris\"},\"citizenship\":\"France\",\"name\":\"John Doe\"}"
+        result = validator.validate(
+            schema,
+            """
+            {"additional-property": true, "address": {}}"""
+        );
+        assertThatJson(result).isEqualTo(
+            """
+            {"additional-property":true,"address":{"city":"Paris"},"citizenship":"France","name":"John Doe"}"""
         );
     }
 
@@ -121,9 +147,13 @@ class JsonSchemaValidatorImplTest {
     void should_return_updated_json_required_default_value_with_allOf() throws IOException {
         String schema = Files.readString(Path.of(SCHEMA_WITH_ALLOF_AND_DEFAULT_VALUE));
 
-        String json = "{\"citizenship\": \"FR\"}";
+        String json = """
+            {"citizenship": "FR"}""";
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"citizenship\":\"FR\",\"status\":\"A\"}");
+        assertThatJson(result).isEqualTo(
+            """
+            {"citizenship":"FR","status":"A"}"""
+        );
     }
 
     @Test
@@ -139,7 +169,10 @@ class JsonSchemaValidatorImplTest {
             }
             """;
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"http\":{\"protocol\":\"HTTP1\",\"keepAlive\":true}}");
+        assertThatJson(result).isEqualTo(
+            """
+            {"http":{"protocol":"HTTP1","keepAlive":true}}"""
+        );
     }
 
     @Test
@@ -158,16 +191,15 @@ class JsonSchemaValidatorImplTest {
         // "onlyInFirst" is required only in first subschema -> should NOT be injected
         // "onlyInSecond" is required only in second subschema -> should NOT be injected
         String json = """
-            {
-                "onlyInFirst": "provided"
-            }
+            { "onlyInFirst": "provided" }
             """;
         String result = validator.validate(schema, json);
 
         // Only "common" should be added, not "onlyInSecond"
-        assertThat(result).contains("\"common\":\"defaultCommon\"");
-        assertThat(result).contains("\"onlyInFirst\":\"provided\"");
-        assertThat(result).doesNotContain("onlyInSecond");
+        assertThatJson(result).isEqualTo(
+            """
+            {"common":"defaultCommon","onlyInFirst":"provided"}"""
+        );
     }
 
     @Test
@@ -177,17 +209,15 @@ class JsonSchemaValidatorImplTest {
         // "readTimeout" is required in both oneOf subschemas and has a default value
         // The oneOf is wrapped inside an allOf, so we need to traverse the causingExceptions
         String json = """
-            {
-                "http": {
-                    "version": "HTTP_1_1"
-                }
-            }
+            { "http": { "version": "HTTP_1_1" } }
             """;
         String result = validator.validate(schema, json);
 
         // "readTimeout" should be injected with its default value 10000
-        assertThat(result).contains("\"readTimeout\":10000");
-        assertThat(result).contains("\"version\":\"HTTP_1_1\"");
+        assertThatJson(result).isEqualTo(
+            """
+            {"http":{"connectTimeout":5000,"readTimeout":10000,"version":"HTTP_1_1"}}"""
+        );
     }
 
     @Test
@@ -198,16 +228,15 @@ class JsonSchemaValidatorImplTest {
         // The schema uses $ref to a definition containing oneOf with "type": "object"
         // This creates an internal allOf (type + oneOf) that wraps the oneOf error
         String json = """
-            {
-                "http": {
-                    "connectTimeout": 5000
-                }
-            }
+            { "http": { "connectTimeout": 5000 } }
             """;
         String result = validator.validate(schema, json);
 
         // "readTimeout" should be injected with its default value 10000
-        assertThat(result).contains("\"readTimeout\":10000");
+        assertThatJson(result).isEqualTo(
+            """
+            {"http":{"connectTimeout":5000,"readTimeout":10000,"version":"HTTP_1_1"}}"""
+        );
     }
 
     @Test
@@ -217,25 +246,27 @@ class JsonSchemaValidatorImplTest {
         // When no "type" is provided, both subschemas would match (they only differ by const value)
         // The validator should default to the first subschema and inject its const value
         String json = """
-            {
-                "config": {
-                    "timeout": 5000
-                }
-            }
+            { "config": { "timeout": 5000 } }
             """;
         String result = validator.validate(schema, json);
 
         // Should inject "type": "TYPE_A" from the first subschema
-        assertThat(result).contains("\"type\":\"TYPE_A\"");
-        assertThat(result).contains("\"timeout\":5000");
+        assertThatJson(result).isEqualTo(
+            """
+            {"config":{"timeout":5000,"type":"TYPE_A"}}"""
+        );
     }
 
     @Test
     void should_inject_root_default_when_discriminator_matches_subschema_oneof() throws IOException {
         String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_REQUIRED_WITH_ROOT_DEFAULTS));
-        String json = "{\n" + "  \"partyType\": \"NATURAL\",\n" + "}";
+        String json = """
+            { "partyType": "NATURAL" }""";
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"name\":\"ACME\",\"partyType\":\"NATURAL\"}");
+        assertThatJson(result).isEqualTo(
+            """
+            {"name":"ACME","partyType":"NATURAL"}"""
+        );
     }
 
     @Test
@@ -243,25 +274,36 @@ class JsonSchemaValidatorImplTest {
         String schema = Files.readString(Path.of(SCHEMA_WITH_ONEOF_REQUIRED_WITH_ROOT_DEFAULTS));
         String json = "{\n}";
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"name\":\"ACME\",\"partyType\":\"COMPANY\"}");
+        assertThatJson(result).isEqualTo(
+            """
+            {"name":"ACME","partyType":"COMPANY"}"""
+        );
     }
 
     @Test
     void should_return_updated_json_with_additional_properties_removed() throws IOException {
         String schema = Files.readString(Path.of(SCHEMA_WITH_NOT_ALLOWED_ADDITIONAL_PROPERTIES));
 
-        String json = "{\n" + "  \"name\": \"John\",\n" + "  \"age\": 30,\n" + "  \"unknown\": 30\n" + "}";
+        String json = """
+            { "name": "John", "age": 30, "unknown": 30 }""";
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"name\":\"John\",\"age\":30}");
+        assertThatJson(result).isEqualTo(
+            """
+            {"name":"John","age":30}"""
+        );
     }
 
     @Test
     void should_return_updated_json_with_additional_properties_removed_keeping_pattern_properties() throws IOException {
         String schema = Files.readString(Path.of(SCHEMA_WITH_NOT_ALLOWED_ADDITIONAL_PROPERTIES_AND_KEEP_PATTERN_PROPERTIES));
 
-        String json = "{\n" + "  \"name\": \"John\",\n" + "  \"to-keep\": \"value\",\n" + "  \"age\": 30,\n" + "  \"unknown\": 30\n" + "}";
+        String json = """
+            { "name": "John", "to-keep": "value", "age": 30, "unknown": 30 }""";
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"name\":\"John\",\"to-keep\":\"value\",\"age\":30}");
+        assertThatJson(result).isEqualTo(
+            """
+            {"name":"John","to-keep":"value","age":30}"""
+        );
     }
 
     @ParameterizedTest
@@ -270,7 +312,7 @@ class JsonSchemaValidatorImplTest {
         String schema = Files.readString(Path.of(SCHEMA_WITH_CUSTOM_REGEX)).replace("regex", regexFormat);
         String json = "{ \"name\": \"^.*[A-Za-z]\\\\d*$\", \"valid\": true }";
         String result = validator.validate(schema, json);
-        assertThat(result).isEqualTo("{\"valid\":true,\"name\":\"^.*[A-Za-z]\\\\d*$\"}");
+        assertThatJson(result).isEqualTo("{\"valid\":true,\"name\":\"^.*[A-Za-z]\\\\d*$\"}");
     }
 
     @ParameterizedTest
@@ -278,7 +320,13 @@ class JsonSchemaValidatorImplTest {
     public void should_reject_invalid_json_due_to_invalid_regex(String regexFormat) throws Exception {
         String schema = Files.readString(Path.of(SCHEMA_WITH_CUSTOM_REGEX)).replace("regex", regexFormat);
 
-        assertThatThrownBy(() -> validator.validate(schema, "{ \"name\": \"( INVALID regex\", \"valid\": true }"))
+        assertThatThrownBy(() ->
+            validator.validate(
+                schema,
+                """
+                { "name": "( INVALID regex", "valid": true }"""
+            )
+        )
             .isInstanceOf(InvalidJsonException.class)
             .hasMessage("#/name: [( INVALID regex] is not a valid regular expression");
     }
@@ -288,27 +336,29 @@ class JsonSchemaValidatorImplTest {
     @Test
     void should_cache_schema_once_for_repeated_validation() throws Exception {
         String schema = Files.readString(Path.of(SIMPLE_SCHEMA));
-        String json = "{\n" + "  \"name\": \"John\",\n" + "  \"age\": 30\n" + "}";
+        String json = """
+            { "name": "John", "age": 30 }""";
 
         assertThat(cacheSize()).isZero();
 
         // First validation builds and caches the schema
         validator.validate(schema, json);
-        assertThat(cacheSize()).isEqualTo(1);
+        assertThat(cacheSize()).isOne();
 
         // Second validation with same schema should reuse cache (still 1)
         validator.validate(schema, json);
-        assertThat(cacheSize()).isEqualTo(1);
+        assertThat(cacheSize()).isOne();
     }
 
     @Test
     void should_cache_two_entries_for_two_different_schemas() throws Exception {
         String schema1 = Files.readString(Path.of(SIMPLE_SCHEMA));
         String schema2 = Files.readString(Path.of(SCHEMA_WITH_DEFAULT_VALUE));
-        String json = "{\n" + "  \"name\": \"John\",\n" + "  \"age\": 30\n" + "}";
+        String json = """
+            { "name": "John", "age": 30 }""";
 
         validator.validate(schema1, json);
-        assertThat(cacheSize()).isEqualTo(1);
+        assertThat(cacheSize()).isOne();
 
         validator.validate(schema2, json);
         assertThat(cacheSize()).isEqualTo(2);
@@ -328,7 +378,8 @@ class JsonSchemaValidatorImplTest {
     @Test
     void should_cache_once_under_concurrency() throws Exception {
         String schema = Files.readString(Path.of(SIMPLE_SCHEMA));
-        String json = "{\n" + "  \"name\": \"John\",\n" + "  \"age\": 30\n" + "}";
+        String json = """
+            { "name": "John", "age": 30 }""";
 
         int threads = 8;
         ExecutorService es = Executors.newFixedThreadPool(threads);
@@ -356,7 +407,7 @@ class JsonSchemaValidatorImplTest {
 
         assertThat(finished).as("Test threads timed out").isTrue();
         assertThat(errorReference.get()).as("Validation failed in a concurrent thread").isNull();
-        assertThat(cacheSize()).isEqualTo(1);
+        assertThat(cacheSize()).isOne();
     }
 
     // ---------------- OneOf with discriminator and required fields ----------------
@@ -393,14 +444,10 @@ class JsonSchemaValidatorImplTest {
             String result = validator.validate(schema, json);
 
             // Should have HTTP type (const from first subschema)
-            assertThat(result).contains("\"type\":\"HTTP\"");
-            // Should have HTTP defaults
-            assertThat(result).contains("\"connectTimeout\":5000");
-            assertThat(result).contains("\"readTimeout\":10000");
-            // Should have HTTP-specific field
-            assertThat(result).contains("\"keepAliveTimeout\":30000");
-            // Should NOT have GRPC-specific field
-            assertThat(result).doesNotContain("\"port\"");
+            assertThatJson(result).isEqualTo(
+                """
+                {"endpoint": {"keepAliveTimeout":30000,"readTimeout":10000,"connectTimeout":5000,"type":"HTTP"}}"""
+            );
         }
 
         @Test
@@ -419,14 +466,10 @@ class JsonSchemaValidatorImplTest {
             String result = validator.validate(schema, json);
 
             // Should keep HTTP type
-            assertThat(result).contains("\"type\":\"HTTP\"");
-            // Should have HTTP defaults
-            assertThat(result).contains("\"connectTimeout\":5000");
-            assertThat(result).contains("\"readTimeout\":10000");
-            // Should have HTTP-specific field
-            assertThat(result).contains("\"keepAliveTimeout\":30000");
-            // Should NOT have GRPC-specific field
-            assertThat(result).doesNotContain("\"port\"");
+            assertThatJson(result).isEqualTo(
+                """
+                {"endpoint": {"keepAliveTimeout":30000,"readTimeout":10000,"connectTimeout":5000,"type":"HTTP"}}"""
+            );
         }
 
         @Test
@@ -445,14 +488,10 @@ class JsonSchemaValidatorImplTest {
             String result = validator.validate(schema, json);
 
             // Should keep GRPC type
-            assertThat(result).contains("\"type\":\"GRPC\"");
-            // Should have GRPC defaults
-            assertThat(result).contains("\"connectTimeout\":3000");
-            assertThat(result).contains("\"readTimeout\":5000");
-            // Should have GRPC-specific field with its default
-            assertThat(result).contains("\"port\":443");
-            // Should NOT have HTTP-specific field
-            assertThat(result).doesNotContain("\"keepAliveTimeout\"");
+            assertThatJson(result).isEqualTo(
+                """
+                {"endpoint": {"port":443,"readTimeout":5000,"connectTimeout":3000,"type":"GRPC"}}"""
+            );
         }
     }
 }

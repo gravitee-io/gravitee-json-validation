@@ -15,7 +15,6 @@
  */
 package io.gravitee.json.validation.helper;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import lombok.extern.slf4j.Slf4j;
@@ -23,15 +22,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class JsonHelper {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
-    static {
-        objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-    }
-
     private JsonHelper() {}
 
-    public static String clearNullValues(String jsonPayload) {
+    public static String clearNullValues(ObjectMapper objectMapper, String jsonPayload) {
         if (jsonPayload == null) {
             return null;
         }

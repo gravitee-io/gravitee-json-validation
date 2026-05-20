@@ -17,9 +17,11 @@ package io.gravitee.json.validation;
 
 import static io.gravitee.json.validation.helper.JsonHelper.clearNullValues;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -38,7 +40,9 @@ import java.util.regex.PatternSyntaxException;
 
 public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMapper.builder()
+        .defaultPropertyInclusion(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.NON_NULL))
+        .build();
     private static final long MAX_CACHE_SIZE = 1000L;
 
     /**
@@ -72,7 +76,7 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
 
     @Override
     public String validate(String schema, String json) {
-        String safeConfiguration = clearNullValues(json);
+        String safeConfiguration = clearNullValues(MAPPER, json);
 
         if (schema != null && !schema.isEmpty()) {
             try {

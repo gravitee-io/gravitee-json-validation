@@ -783,31 +783,33 @@ class JsonSchemaValidatorImplTest {
                 { "name": "John", "age": 30 }""";
 
             int threads = 8;
-            ExecutorService es = Executors.newFixedThreadPool(threads);
             CountDownLatch start = new CountDownLatch(1);
             CountDownLatch done = new CountDownLatch(threads);
             java.util.concurrent.atomic.AtomicReference<Throwable> errorReference = new java.util.concurrent.atomic.AtomicReference<>();
 
-            for (int i = 0; i < threads; i++) {
-                es.submit(() -> {
-                    try {
-                        start.await(5, java.util.concurrent.TimeUnit.SECONDS);
-                        validator.validate(schema, json);
-                    } catch (Throwable e) {
-                        errorReference.set(e);
-                    } finally {
-                        done.countDown();
-                    }
-                });
+            try (ExecutorService es = Executors.newFixedThreadPool(threads)) {
+                for (int i = 0; i < threads; i++) {
+                    es.submit(() -> {
+                        try {
+                            if (!start.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("Timed out waiting for start latch");
+                            }
+                            validator.validate(schema, json);
+                        } catch (Throwable e) {
+                            errorReference.set(e);
+                        } finally {
+                            done.countDown();
+                        }
+                    });
+                }
+
+                start.countDown();
+                boolean finished = done.await(10, java.util.concurrent.TimeUnit.SECONDS);
+
+                assertThat(finished).as("Test threads timed out").isTrue();
+                assertThat(errorReference.get()).as("Validation failed in a concurrent thread").isNull();
+                assertThat(cacheSize()).isOne();
             }
-
-            start.countDown();
-            boolean finished = done.await(10, java.util.concurrent.TimeUnit.SECONDS);
-            es.shutdownNow();
-
-            assertThat(finished).as("Test threads timed out").isTrue();
-            assertThat(errorReference.get()).as("Validation failed in a concurrent thread").isNull();
-            assertThat(cacheSize()).isOne();
         }
     }
 

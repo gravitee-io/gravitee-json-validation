@@ -24,7 +24,7 @@
     <parent>
         <groupId>io.gravitee</groupId>
         <artifactId>gravitee-parent</artifactId>
-        <version>22.5.1</version>
+        <version>24.0.2</version>
     </parent>
 
     <groupId>io.gravitee.json</groupId>
@@ -34,12 +34,12 @@
     <name>Gravitee.io - JSON Validation</name>
 
     <properties>
-        <gravitee-bom.version>6.0.62</gravitee-bom.version>
+        <gravitee-bom.version>8.3.58</gravitee-bom.version>
 
-        <json.version>20231013</json.version>
-        <everit-json-schema.version>1.14.2</everit-json-schema.version>
+        <networknt-json-schema-validator.version>2.0.1</networknt-json-schema-validator.version>
+        <json-unit-assertj.version>4.1.1</json-unit-assertj.version>
 
-        <maven-plugin-javadoc.version>3.12.0</maven-plugin-javadoc.version>
+        <gravitee.archrules.skip>true</gravitee.archrules.skip>
     </properties>
 
     <dependencyManagement>
@@ -56,16 +56,11 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Other -->
+        <!-- JSON Schema Validation -->
         <dependency>
-            <groupId>com.github.erosb</groupId>
-            <artifactId>everit-json-schema</artifactId>
-            <version>${everit-json-schema.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.json</groupId>
-            <artifactId>json</artifactId>
-            <version>${json.version}</version>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>${networknt-json-schema-validator.version}</version>
         </dependency>
 
         <!-- Caching -->
@@ -103,6 +98,12 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.json-unit</groupId>
+            <artifactId>json-unit-assertj</artifactId>
+            <version>${json-unit-assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -110,10 +111,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>${maven-plugin-javadoc.version}</version>
                 <configuration>
                     <additionalJOption>-Xdoclint:none</additionalJOption>
-                    <source>11</source>
+                    <source>21</source>
                 </configuration>
             </plugin>
         </plugins>

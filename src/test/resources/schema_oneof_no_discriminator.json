@@ -1,0 +1,28 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "endpoint": {
+            "type": "object",
+            "oneOf": [
+                {
+                    "title": "TCP Endpoint",
+                    "properties": {
+                        "host": { "type": "string", "default": "localhost" },
+                        "port": { "type": "integer", "default": 8080 }
+                    },
+                    "required": ["host", "port"],
+                    "additionalProperties": false
+                },
+                {
+                    "title": "Unix Socket Endpoint",
+                    "properties": {
+                        "socketPath": { "type": "string", "default": "/var/run/app.sock" }
+                    },
+                    "required": ["socketPath"],
+                    "additionalProperties": false
+                }
+            ]
+        }
+    }
+}

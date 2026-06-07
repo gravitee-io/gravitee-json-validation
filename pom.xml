@@ -37,7 +37,7 @@
         <gravitee-bom.version>8.3.61</gravitee-bom.version>
 
         <networknt-json-schema-validator.version>2.0.1</networknt-json-schema-validator.version>
-        <json-unit-assertj.version>4.1.1</json-unit-assertj.version>
+        <json-unit-assertj.version>5.1.2</json-unit-assertj.version>
 
         <gravitee.archrules.skip>true</gravitee.archrules.skip>
     </properties>

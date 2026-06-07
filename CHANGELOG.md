@@ -1,3 +1,10 @@
+## [3.0.1](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.0...3.0.1) (2026-06-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.github.ben-manes.caffeine:caffeine to v3.2.4 ([52c2a1a](https://github.com/gravitee-io/gravitee-json-validation/commit/52c2a1a33504a04891cc69da8996dd64a765f9c7))
+
 # [3.0.0](https://github.com/gravitee-io/gravitee-json-validation/compare/2.3.0...3.0.0) (2026-06-07)
 
 

@@ -1,3 +1,20 @@
+# [3.0.0](https://github.com/gravitee-io/gravitee-json-validation/compare/2.3.0...3.0.0) (2026-06-07)
+
+
+### chore
+
+* **deps:** bump gravitee-parent version to 24.0.2 ([873debf](https://github.com/gravitee-io/gravitee-json-validation/commit/873debf416447ba057d332f4a8884dbb0ed2aed0))
+
+
+### Features
+
+* migrate from everit-json-schema to networknt/json-schema-validator ([d4f8d6a](https://github.com/gravitee-io/gravitee-json-validation/commit/d4f8d6a0913cbd31ac6bd9cc970798d46dbc5edf))
+
+
+### BREAKING CHANGES
+
+* **deps:** requires Java21
+
 # [2.3.0](https://github.com/gravitee-io/gravitee-json-validation/compare/2.2.0...2.3.0) (2026-03-24)
 
 

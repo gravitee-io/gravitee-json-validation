@@ -33,6 +33,7 @@ import com.networknt.schema.SchemaRegistryConfig;
 import com.networknt.schema.dialect.Dialect;
 import com.networknt.schema.dialect.Draft7;
 import com.networknt.schema.format.Format;
+import com.networknt.schema.keyword.AnnotationKeyword;
 import com.networknt.schema.path.PathType;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -57,10 +58,15 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
      * Default networknt regex format validates against ECMA-262 syntax; existing schemas use Java Pattern syntax.
      * Override registers JavaRegexFormat for both regex and java-regex names so schema patterns compile via
      * java.util.regex.Pattern instead of being rejected.
+     *
+     * Legacy Gravitee schemas carry the Draft 4 "id" keyword (renamed to "$id" in Draft 6+). Draft 7 has no
+     * validator registered for bare "id", so SchemaRegistry throws "No suitable validator for id" on those
+     * documents. Registering it as an AnnotationKeyword makes it a no-op so the schemas compile.
      */
     private static final Dialect DRAFT7_WITH_REGEX = Dialect.builder(Draft7.getInstance())
         .format(new JavaRegexFormat("java-regex"))
         .format(new JavaRegexFormat("regex"))
+        .keyword(new AnnotationKeyword("id"))
         .build();
 
     /**

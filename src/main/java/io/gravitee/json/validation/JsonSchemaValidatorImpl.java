@@ -543,13 +543,24 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
         JsonNode properties = resolved.get("properties");
         if (properties == null) return;
 
+        // When the schema declares "required", restrict auto-injection to those properties. Non-required
+        // fields are treated as opt-in: the caller's omission is intentional, so we don't populate them
+        // even when they carry a default. Without a "required" array we fall back to injecting every
+        // default — legacy behavior relied on by schemas that lean on defaults instead of requirements.
+        Set<String> requiredFields = null;
+        JsonNode requiredArray = resolved.get("required");
+        if (requiredArray != null && requiredArray.isArray()) {
+            requiredFields = new HashSet<>();
+            for (JsonNode r : requiredArray) requiredFields.add(r.asText());
+        }
+
         for (Map.Entry<String, JsonNode> entry : properties.properties()) {
             String propName = entry.getKey();
             JsonNode propSchema = resolveRef(schemaRoot, entry.getValue());
             if (propSchema == null) continue;
 
             if (!objectNode.has(propName)) {
-                if (propSchema.has("default")) {
+                if (propSchema.has("default") && (requiredFields == null || requiredFields.contains(propName))) {
                     objectNode.set(propName, propSchema.get("default").deepCopy());
                 }
             } else {

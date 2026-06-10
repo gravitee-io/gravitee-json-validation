@@ -367,6 +367,51 @@ class JsonSchemaValidatorImplTest {
                 """
             );
         }
+
+        @Test
+        void should_only_inject_required_defaults_when_required_array_is_present() {
+            String schema = """
+                {
+                  "$schema": "http://json-schema.org/draft-07/schema#",
+                  "type": "object",
+                  "properties": {
+                    "requiredWithDefault": { "type": "string", "default": "req-default" },
+                    "optionalWithDefault": { "type": "string", "default": "opt-default" },
+                    "anotherOptional":     { "type": "boolean", "default": true }
+                  },
+                  "required": ["requiredWithDefault"]
+                }
+                """;
+
+            String result = validator.validate(schema, "{}");
+
+            assertThatJson(result).isEqualTo(
+                """
+                {"requiredWithDefault":"req-default"}"""
+            );
+        }
+
+        @Test
+        void should_inject_all_defaults_when_no_required_array() {
+            String schema = """
+                {
+                  "$schema": "http://json-schema.org/draft-07/schema#",
+                  "type": "object",
+                  "properties": {
+                    "first":  { "type": "string", "default": "first-default" },
+                    "second": { "type": "boolean", "default": false },
+                    "third":  { "type": "integer", "default": 42 }
+                  }
+                }
+                """;
+
+            String result = validator.validate(schema, "{}");
+
+            assertThatJson(result).isEqualTo(
+                """
+                {"first":"first-default","second":false,"third":42}"""
+            );
+        }
     }
 
     // -------------------------------------------------------------------------

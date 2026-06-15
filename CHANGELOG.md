@@ -1,3 +1,11 @@
+## [3.0.2](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.1...3.0.2) (2026-06-15)
+
+
+### Bug Fixes
+
+* skip non-required defaults when schema declares required array ([94f2c5b](https://github.com/gravitee-io/gravitee-json-validation/commit/94f2c5b06c5e195a63e95c995d19d399000eff37))
+* support legacy draft 4 "id" keyword on draft 7 dialect ([f3a4b3f](https://github.com/gravitee-io/gravitee-json-validation/commit/f3a4b3fdc5c5eb4e75d9aa66c7ad00b1db71a503))
+
 ## [3.0.1](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.0...3.0.1) (2026-06-07)
 
 

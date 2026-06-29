@@ -34,7 +34,7 @@
     <name>Gravitee.io - JSON Validation</name>
 
     <properties>
-        <gravitee-bom.version>8.3.63</gravitee-bom.version>
+        <gravitee-bom.version>8.3.64</gravitee-bom.version>
 
         <networknt-json-schema-validator.version>2.0.1</networknt-json-schema-validator.version>
         <json-unit-assertj.version>4.1.1</json-unit-assertj.version>

@@ -80,6 +80,9 @@ class JsonSchemaValidatorImplTest {
     public static final String SCHEMA_ONEOF_NO_DISCRIMINATOR = "src/test/resources/schema_oneof_no_discriminator.json";
     public static final String SCHEMA_ONEOF_MIXED_CONST_FREEFORM = "src/test/resources/schema_oneof_mixed_const_freeform.json";
     public static final String SCHEMA_ONEOF_PATTERN_PROPERTIES = "src/test/resources/schema_oneof_pattern_properties.json";
+    public static final String SCHEMA_DISCRIMINATED_ONEOF_INLINE = "src/test/resources/schema_discriminated_oneof_inline.json";
+    public static final String SCHEMA_DISCRIMINATED_ONEOF_REF = "src/test/resources/schema_discriminated_oneof_ref.json";
+    public static final String SCHEMA_DISCRIMINATED_IF_THEN = "src/test/resources/schema_discriminated_if_then.json";
 
     JsonSchemaValidator validator = new JsonSchemaValidatorImpl();
 
@@ -773,6 +776,291 @@ class JsonSchemaValidatorImplTest {
                     {"endpoint": {"mode":"CUSTOM","label":"free"}}"""
                 );
             }
+
+            @Test
+            void should_report_errors_of_branch_declaring_the_fields_rather_than_inject_into_a_tolerant_branch() {
+                // Shape of the OAS validation policy: the first branch tolerates any extra field, so injecting its
+                // default would make the configuration formally valid while ignoring the invalid sourceUrl.
+                String schema = """
+                    {
+                      "type": "object",
+                      "oneOf": [
+                        { "properties": { "resourceName": { "type": "string", "default": "" } }, "required": ["resourceName"] },
+                        { "properties": { "sourceUrl": { "type": "string" } }, "required": ["sourceUrl"] }
+                      ]
+                    }
+                    """;
+
+                assertThatThrownBy(() -> validator.validate(schema, "{\"sourceUrl\": 12}"))
+                    .isInstanceOf(InvalidJsonException.class)
+                    .hasMessage("$.sourceUrl: integer found, string expected");
+            }
+
+            @Test
+            void should_not_infer_a_discriminator_required_by_the_schema_holding_the_oneOf() {
+                // Shape of the Kafka message encryption and JSON to TOON policies: "mode" has no default, so a
+                // configuration omitting it must be rejected rather than silently get the first variant.
+                String schema = """
+                    {
+                      "type": "object",
+                      "required": ["mode"],
+                      "oneOf": [
+                        { "properties": { "mode": { "const": "A" }, "a": { "type": "string" } }, "additionalProperties": false },
+                        { "properties": { "mode": { "const": "B" }, "b": { "type": "string" } }, "additionalProperties": false }
+                      ]
+                    }
+                    """;
+
+                assertThatThrownBy(() -> validator.validate(schema, "{\"a\": \"x\"}"))
+                    .isInstanceOf(InvalidJsonException.class)
+                    .hasMessage("$: required property 'mode' not found");
+            }
+
+            @Test
+            void should_keep_first_branch_when_discriminator_is_absent_instead_of_guessing_from_fields() {
+                // Shape of the webhook signature policies: guessing from "delimiter" would turn "enabled" on.
+                String schema = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "scheme": {
+                          "type": "object",
+                          "oneOf": [
+                            { "properties": { "enabled": { "const": false } } },
+                            { "properties": { "enabled": { "const": true }, "delimiter": { "type": "string" } }, "required": ["delimiter"] }
+                          ]
+                        }
+                      }
+                    }
+                    """;
+
+                assertThatJson(validator.validate(schema, "{\"scheme\": {\"delimiter\": \".\"}}")).isEqualTo(
+                    """
+                    {"scheme": {"enabled": false, "delimiter": "."}}"""
+                );
+            }
+
+            @Test
+            void should_only_inject_discriminators_constrained_by_the_selected_branch() {
+                // Shape of the LLM proxy model governance: "aliasOnly" is a discriminator of the second branch only,
+                // the first branch merely gives it a default and must not get it injected.
+                String schema = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "governance": {
+                          "type": "object",
+                          "oneOf": [
+                            { "properties": { "aliasOnly": { "type": "boolean", "default": false }, "modelPattern": { "const": "" } } },
+                            { "properties": { "aliasOnly": { "const": false }, "modelPattern": { "type": "string", "default": "", "pattern": "^.+$" } } }
+                          ]
+                        }
+                      }
+                    }
+                    """;
+
+                assertThatJson(validator.validate(schema, "{\"governance\": {}}")).isEqualTo(
+                    """
+                    {"governance": {"modelPattern": ""}}"""
+                );
+            }
+
+            @Test
+            void should_keep_every_block_when_branches_combine_optional_sections() {
+                // Shape of the RabbitMQ / MQTT5 / JMS shared configurations: the first branch (producer only) used to
+                // be selected, silently dropping the consumer block as soon as any correction was needed.
+                String schema = """
+                    {
+                      "type": "object",
+                      "oneOf": [
+                        { "properties": { "producer": { "type": "object" } }, "required": ["producer"], "additionalProperties": false },
+                        { "properties": { "consumer": { "type": "object" } }, "required": ["consumer"], "additionalProperties": false },
+                        {
+                          "properties": { "producer": { "type": "object" }, "consumer": { "type": "object" } },
+                          "required": ["producer", "consumer"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                    """;
+
+                assertThatJson(
+                    validator.validate(schema, "{\"producer\": {\"topic\": \"p\"}, \"consumer\": {\"topic\": \"c\"}, \"unknown\": 1}")
+                ).isEqualTo(
+                    """
+                    {"producer": {"topic": "p"}, "consumer": {"topic": "c"}}"""
+                );
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Discriminated unions: the same "authentication" variants (CLIENT_SECRET / CLIENT_CERTIFICATE)
+    // expressed as an inline oneOf, a oneOf of $refs, and a type enum + allOf/if/then. All three forms
+    // must produce exactly the same outcome.
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class DiscriminatedUnion {
+
+        private static final String URL = "https://x.services.ai.azure.com/api/projects/p";
+
+        private String validate(String schemaPath, String authentication) throws IOException {
+            String schema = Files.readString(Path.of(schemaPath));
+            return validator.validate(schema, configuration(authentication));
+        }
+
+        private String configuration(String authentication) {
+            return """
+            { "url": "%s", "authentication": %s }""".formatted(URL, authentication);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_reject_default_variant_when_its_required_field_is_missing(String schemaPath) {
+            assertThatThrownBy(() ->
+                validate(
+                    schemaPath,
+                    """
+                    { "tenantId": "t", "clientId": "c" }"""
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessage("$.authentication: required property 'clientSecret' not found");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_reject_instead_of_defaulting_discriminator_when_fields_belong_to_another_variant(String schemaPath) {
+            assertThatThrownBy(() ->
+                validate(
+                    schemaPath,
+                    """
+                    { "tenantId": "t", "clientId": "c", "certificate": "-----BEGIN..." }"""
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessageContaining("$.authentication: required property 'type' not found")
+                .hasMessageNotContaining("must be valid to one and only one schema")
+                .hasMessageNotContaining("certificate");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_reject_wrong_type_in_matching_variant(String schemaPath) {
+            assertThatThrownBy(() ->
+                validate(
+                    schemaPath,
+                    """
+                    { "type": "CLIENT_SECRET", "tenantId": "t", "clientId": "c", "clientSecret": 12 }"""
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessage("$.authentication.clientSecret: integer found, string expected");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_remove_unknown_property_from_matching_variant(String schemaPath) throws IOException {
+            String result = validate(
+                schemaPath,
+                """
+                { "type": "CLIENT_SECRET", "tenantId": "t", "clientId": "c", "clientSecret": "s", "foo": 1 }"""
+            );
+
+            assertThatJson(result).isEqualTo(
+                configuration(
+                    """
+                    { "type": "CLIENT_SECRET", "tenantId": "t", "clientId": "c", "clientSecret": "s" }"""
+                )
+            );
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_remove_property_of_previous_variant_when_type_changes(String schemaPath) throws IOException {
+            String result = validate(
+                schemaPath,
+                """
+                { "type": "CLIENT_CERTIFICATE", "tenantId": "t", "clientId": "c", "certificate": "-----BEGIN...", "clientSecret": "old" }"""
+            );
+
+            assertThatJson(result).isEqualTo(
+                configuration(
+                    """
+                    { "type": "CLIENT_CERTIFICATE", "tenantId": "t", "clientId": "c", "certificate": "-----BEGIN..." }"""
+                )
+            );
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_keep_valid_client_secret_configuration_unchanged(String schemaPath) throws IOException {
+            String authentication = """
+                { "type": "CLIENT_SECRET", "tenantId": "t", "clientId": "c", "clientSecret": "s" }""";
+
+            assertThatJson(validate(schemaPath, authentication)).isEqualTo(configuration(authentication));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_keep_valid_client_certificate_configuration_unchanged(String schemaPath) throws IOException {
+            String authentication = """
+                { "type": "CLIENT_CERTIFICATE", "tenantId": "t", "clientId": "c", "certificate": "-----BEGIN...", "privateKeyPassword": "p" }""";
+
+            assertThatJson(validate(schemaPath, authentication)).isEqualTo(configuration(authentication));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_inject_default_discriminator_when_fields_fit_default_variant(String schemaPath) throws IOException {
+            String result = validate(
+                schemaPath,
+                """
+                { "tenantId": "t", "clientId": "c", "clientSecret": "s" }"""
+            );
+
+            assertThatJson(result).isEqualTo(
+                configuration(
+                    """
+                    { "type": "CLIENT_SECRET", "tenantId": "t", "clientId": "c", "clientSecret": "s" }"""
+                )
+            );
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { SCHEMA_DISCRIMINATED_ONEOF_INLINE, SCHEMA_DISCRIMINATED_ONEOF_REF, SCHEMA_DISCRIMINATED_IF_THEN })
+        void should_reject_missing_required_field_of_explicit_variant(String schemaPath) {
+            assertThatThrownBy(() ->
+                validate(
+                    schemaPath,
+                    """
+                    { "type": "CLIENT_CERTIFICATE", "tenantId": "t", "clientId": "c" }"""
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessage("$.authentication: required property 'certificate' not found");
+        }
+
+        @Test
+        void should_not_prune_properties_of_a_single_conditional_toggle() {
+            String schema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": false },
+                    "host": { "type": "string" }
+                  },
+                  "allOf": [
+                    { "if": { "properties": { "enabled": { "const": true } } }, "then": { "required": ["host"] } }
+                  ],
+                  "additionalProperties": false
+                }
+                """;
+            String json = """
+                { "enabled": false, "host": "proxy" }""";
+
+            assertThatJson(validator.validate(schema, json)).isEqualTo(json);
         }
     }
 

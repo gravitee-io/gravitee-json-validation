@@ -120,10 +120,15 @@ The validator provides smart handling for `oneOf` schemas with automatic subsche
 
 ==== How it works
 
-1. **Discriminator detection**: The validator looks for `const` properties in each subschema. If the input config contains a value matching a `const`, that subschema is selected.
-2. **Default fallback**: If no discriminator is found in the config, the **first subschema** is selected by default.
-3. **Validator pre-filling fallback**: checks whether all required properties and const constraints of the given subschema are already satisfied by the target JSON object — without injecting any defaults. With `useDefaults` enabled, the validator mutates original json in-place during validation.
-4. **Default injection**: Missing `const` values (discriminators) and missing required properties with defaults are injected from the selected subschema.
+Inline subschemas and `$ref` subschemas are handled identically.
+
+1. **Branch selection**, by decreasing priority:
+* *Discriminator*: a subschema whose `const` (or single-value `enum`) property equals the value supplied by the config.
+* *Discriminator default*: when the discriminator is absent but has a `default` (in the schema holding the `oneOf` or in a subschema), the subschema it designates — only if that subschema accepts every field already present. Otherwise the default is *not* applied: it would silently switch the variant and drop those fields (e.g. defaulting `type` to `CLIENT_SECRET` while a `certificate` is set), and the config is rejected asking for the discriminator.
+* *No discriminator value*: the **first subschema** the config does not contradict (preferring those accepting every field present), and its `const` values are injected — except a discriminator required by the schema holding the `oneOf`, which must then be supplied. When the subschemas have no discriminator at all, the one declaring most of the fields present is preferred.
+2. **Correction**: missing `const` values and missing required properties with defaults are injected from the selected subschema, and properties it does not allow (`additionalProperties: false`) are removed. Errors raised by the other subschemas are ignored.
+3. **Re-validation**: the corrected config is validated again and rejected unless it conforms. A config satisfying several subschemas is accepted.
+4. **Error reporting**: when the selected subschema is identified unambiguously, its own errors are reported (e.g. `$.authentication: required property 'clientSecret' not found`) instead of the generic `must be valid to one and only one schema` error.
 
 ==== Example with discriminator provided
 
@@ -230,6 +235,16 @@ For complex schemas where `allOf` wraps other constructs (like `oneOf`), the val
 
 This is common when using `$ref` to definitions that combine `type: object` with `oneOf`.
 
+=== Discriminated if/then Handling
+
+Variants can also be described with a discriminator property and `allOf` entries of the form `{ "if": { "properties": { "type": { "const": "A" } } }, "then": { "required": [...] } }`.
+
+When the object has `additionalProperties: false` and at least two such entries switch on the same property, the properties referenced (in `required` or `properties`) only by the `then` of inactive entries are removed. For instance, `clientSecret` is dropped when `type` is switched to `CLIENT_CERTIFICATE`.
+
+Never removed: properties required by the object schema itself, properties referenced by an active entry or by no entry at all, and anything when the discriminator value activates no entry. A single `if`/`then` (e.g. "`host` is required when `enabled`") is a toggle, not a variant, so its properties are kept when the toggle is off.
+
+As for `oneOf`, the default of the discriminator is not applied when fields of another variant are present.
+
 === Custom Regex Format Validator
 
 The library supports both `regex` and `java-regex` format validators for validating Java regular expression patterns in string values.
@@ -248,7 +263,7 @@ The library supports both `regex` and `java-regex` format validators for validat
 
 == Error Handling
 
-When validation fails and cannot be auto-corrected, an `InvalidJsonException` is thrown with a detailed message about the validation error.
+When validation fails and cannot be auto-corrected, an `InvalidJsonException` is thrown with a detailed message about the validation error. The config is always re-validated after auto-correction, so a corrected config is only returned when it conforms to the schema.
 
 [source,java]
 ----

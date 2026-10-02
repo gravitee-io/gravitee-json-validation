@@ -1,0 +1,32 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "authentication": {
+            "type": "object",
+            "properties": {
+                "type": { "enum": ["CLIENT_SECRET", "CLIENT_CERTIFICATE"], "default": "CLIENT_SECRET" },
+                "tenantId": { "type": "string" },
+                "clientId": { "type": "string" },
+                "clientSecret": { "type": "string", "format": "password" },
+                "certificate": { "type": "string" },
+                "privateKeyPassword": { "type": "string", "format": "password" }
+            },
+            "required": ["type"],
+            "allOf": [
+                {
+                    "if": { "properties": { "type": { "const": "CLIENT_SECRET" } } },
+                    "then": { "required": ["tenantId", "clientId", "clientSecret"] }
+                },
+                {
+                    "if": { "properties": { "type": { "const": "CLIENT_CERTIFICATE" } }, "required": ["type"] },
+                    "then": { "required": ["tenantId", "clientId", "certificate"] }
+                }
+            ],
+            "additionalProperties": false
+        }
+    },
+    "required": ["url", "authentication"],
+    "additionalProperties": false
+}

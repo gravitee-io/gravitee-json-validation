@@ -236,7 +236,7 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
         REPORT_ONLY,
     }
 
-    private record BranchSelection(int index, SelectionMode mode, Map<String, JsonNode> discriminatorDefaults, boolean unambiguous) {}
+    private record BranchSelection(int index, SelectionMode mode, boolean unambiguous) {}
 
     private record OneOfFailure(String evaluationPath, int selectedBranch, boolean unambiguous) {}
 
@@ -357,7 +357,8 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
      *   <li>when the discriminator is absent, the branch designated by its default value, provided that branch accepts
      *       every field present. Otherwise the default is not applied (it would switch the variant and drop fields)
      *       and the branch accepting the fields present is used to report the errors;</li>
-     *   <li>without discriminator, the branch the input does not contradict declaring most of the fields present.</li>
+     *   <li>without discriminator value, the first branch the input does not contradict, preferring those accepting every
+     *       field present; when the branches have no discriminator at all, the one declaring most of the fields present.</li>
      * </ol>
      * When several branches qualify for 1 or 2, the one with the fewest validation errors wins. Remaining ties go to the
      * first branch, but the selection is then flagged ambiguous and the generic oneOf error is reported.
@@ -378,7 +379,7 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
 
         List<Integer> matching = branchesMatchingDiscriminator(branches, constraints, target);
         if (!matching.isEmpty()) {
-            return closestBranch(matching, errorCounts, SelectionMode.MATCHED, Map.of());
+            return closestBranch(matching, errorCounts, SelectionMode.MATCHED);
         }
 
         Map<String, JsonNode> defaults = discriminatorDefaults(schemaRoot, container, branches, constraints, target);
@@ -388,14 +389,14 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
 
             List<Integer> defaulted = branchesMatchingDiscriminator(branches, constraints, withDefaults);
             if (!defaulted.isEmpty()) {
-                BranchSelection selection = closestBranch(defaulted, errorCounts, SelectionMode.DEFAULTED, defaults);
+                BranchSelection selection = closestBranch(defaulted, errorCounts, SelectionMode.DEFAULTED);
                 if (allowedProperties(branches.get(selection.index())).allMatch(target)) {
                     return selection;
                 }
                 List<Integer> accepting = branchesAcceptingFields(branches, constraints, target);
                 return accepting.isEmpty()
-                    ? new BranchSelection(selection.index(), SelectionMode.REPORT_ONLY, Map.of(), selection.unambiguous())
-                    : closestBranch(accepting, errorCounts, SelectionMode.REPORT_ONLY, Map.of());
+                    ? new BranchSelection(selection.index(), SelectionMode.REPORT_ONLY, selection.unambiguous())
+                    : closestBranch(accepting, errorCounts, SelectionMode.REPORT_ONLY);
             }
         }
 
@@ -406,22 +407,29 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
         if (candidates.isEmpty()) {
             return null;
         }
-        // Prefer the branch declaring most of the fields present: a branch merely tolerating them (no
-        // additionalProperties: false) must not win over the one they were written for.
-        int[] undeclaredFields = new int[branches.size()];
-        for (int candidate : candidates) {
-            undeclaredFields[candidate] = -declaredFieldCount(branches.get(candidate), target);
+        int[] scores = new int[branches.size()];
+        boolean hasDiscriminator = constraints
+            .stream()
+            .anyMatch(c ->
+                c
+                    .values()
+                    .stream()
+                    .anyMatch(values -> values.size() == 1)
+            );
+        if (!hasDiscriminator) {
+            // Prefer the branch declaring most of the fields present: a branch merely tolerating them (no
+            // additionalProperties: false) must not win over the one they were written for. Not done when the branches
+            // have a discriminator the input omits: guessing it from the fields could switch a stored configuration to
+            // another variant (e.g. turn "enabled" on), so the first branch is kept as before.
+            for (int candidate : candidates) {
+                scores[candidate] = -declaredFieldCount(branches.get(candidate), target);
+            }
         }
-        return closestBranch(candidates, undeclaredFields, SelectionMode.INFERRED, Map.of());
+        return closestBranch(candidates, scores, SelectionMode.INFERRED);
     }
 
     /** The candidate with the lowest score, the first one on ties; ambiguous when the lowest score is shared. */
-    private BranchSelection closestBranch(
-        List<Integer> candidates,
-        int[] scores,
-        SelectionMode mode,
-        Map<String, JsonNode> discriminatorDefaults
-    ) {
+    private BranchSelection closestBranch(List<Integer> candidates, int[] scores, SelectionMode mode) {
         int best = candidates.get(0);
         boolean unambiguous = true;
         for (int candidate : candidates.subList(1, candidates.size())) {
@@ -432,7 +440,7 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
                 unambiguous = false;
             }
         }
-        return new BranchSelection(best, mode, discriminatorDefaults, unambiguous);
+        return new BranchSelection(best, mode, unambiguous);
     }
 
     private int declaredFieldCount(JsonNode branch, ObjectNode object) {
@@ -575,15 +583,14 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
             });
         injected.forEach(target::remove);
 
-        selection
-            .discriminatorDefaults()
-            .forEach((name, value) -> {
-                if (!target.has(name) && allowed.test(name)) target.set(name, value.deepCopy());
-            });
-
-        // Pin the branch: its const values make it the one the re-validation matches.
+        // Pin the branch: its const values make it the one the re-validation matches. For a defaulted branch this
+        // applies the discriminator default. An inferred branch never supplies a discriminator the schema holding the
+        // oneOf requires without default: the user has to choose it.
+        Set<String> containerRequired = selection.mode() == SelectionMode.INFERRED ? stringSet(container.get("required")) : Set.of();
         valueConstraints(schemaRoot, branch).forEach((name, values) -> {
-            if (values.size() == 1 && !target.has(name)) target.set(name, values.get(0).deepCopy());
+            if (values.size() == 1 && !target.has(name) && !containerRequired.contains(name)) {
+                target.set(name, values.get(0).deepCopy());
+            }
         });
     }
 

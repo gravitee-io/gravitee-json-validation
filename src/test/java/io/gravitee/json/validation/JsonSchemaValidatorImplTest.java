@@ -795,6 +795,102 @@ class JsonSchemaValidatorImplTest {
                     .isInstanceOf(InvalidJsonException.class)
                     .hasMessage("$.sourceUrl: integer found, string expected");
             }
+
+            @Test
+            void should_not_infer_a_discriminator_required_by_the_schema_holding_the_oneOf() {
+                // Shape of the Kafka message encryption and JSON to TOON policies: "mode" has no default, so a
+                // configuration omitting it must be rejected rather than silently get the first variant.
+                String schema = """
+                    {
+                      "type": "object",
+                      "required": ["mode"],
+                      "oneOf": [
+                        { "properties": { "mode": { "const": "A" }, "a": { "type": "string" } }, "additionalProperties": false },
+                        { "properties": { "mode": { "const": "B" }, "b": { "type": "string" } }, "additionalProperties": false }
+                      ]
+                    }
+                    """;
+
+                assertThatThrownBy(() -> validator.validate(schema, "{\"a\": \"x\"}"))
+                    .isInstanceOf(InvalidJsonException.class)
+                    .hasMessage("$: required property 'mode' not found");
+            }
+
+            @Test
+            void should_keep_first_branch_when_discriminator_is_absent_instead_of_guessing_from_fields() {
+                // Shape of the webhook signature policies: guessing from "delimiter" would turn "enabled" on.
+                String schema = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "scheme": {
+                          "type": "object",
+                          "oneOf": [
+                            { "properties": { "enabled": { "const": false } } },
+                            { "properties": { "enabled": { "const": true }, "delimiter": { "type": "string" } }, "required": ["delimiter"] }
+                          ]
+                        }
+                      }
+                    }
+                    """;
+
+                assertThatJson(validator.validate(schema, "{\"scheme\": {\"delimiter\": \".\"}}")).isEqualTo(
+                    """
+                    {"scheme": {"enabled": false, "delimiter": "."}}"""
+                );
+            }
+
+            @Test
+            void should_only_inject_discriminators_constrained_by_the_selected_branch() {
+                // Shape of the LLM proxy model governance: "aliasOnly" is a discriminator of the second branch only,
+                // the first branch merely gives it a default and must not get it injected.
+                String schema = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "governance": {
+                          "type": "object",
+                          "oneOf": [
+                            { "properties": { "aliasOnly": { "type": "boolean", "default": false }, "modelPattern": { "const": "" } } },
+                            { "properties": { "aliasOnly": { "const": false }, "modelPattern": { "type": "string", "default": "", "pattern": "^.+$" } } }
+                          ]
+                        }
+                      }
+                    }
+                    """;
+
+                assertThatJson(validator.validate(schema, "{\"governance\": {}}")).isEqualTo(
+                    """
+                    {"governance": {"modelPattern": ""}}"""
+                );
+            }
+
+            @Test
+            void should_keep_every_block_when_branches_combine_optional_sections() {
+                // Shape of the RabbitMQ / MQTT5 / JMS shared configurations: the first branch (producer only) used to
+                // be selected, silently dropping the consumer block as soon as any correction was needed.
+                String schema = """
+                    {
+                      "type": "object",
+                      "oneOf": [
+                        { "properties": { "producer": { "type": "object" } }, "required": ["producer"], "additionalProperties": false },
+                        { "properties": { "consumer": { "type": "object" } }, "required": ["consumer"], "additionalProperties": false },
+                        {
+                          "properties": { "producer": { "type": "object" }, "consumer": { "type": "object" } },
+                          "required": ["producer", "consumer"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                    """;
+
+                assertThatJson(
+                    validator.validate(schema, "{\"producer\": {\"topic\": \"p\"}, \"consumer\": {\"topic\": \"c\"}, \"unknown\": 1}")
+                ).isEqualTo(
+                    """
+                    {"producer": {"topic": "p"}, "consumer": {"topic": "c"}}"""
+                );
+            }
         }
     }
 

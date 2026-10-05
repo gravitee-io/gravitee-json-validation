@@ -1,3 +1,11 @@
+## [3.0.3](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.2...3.0.3) (2026-10-05)
+
+
+### Bug Fixes
+
+* keep legacy oneOf choices when the discriminator is absent ([196e399](https://github.com/gravitee-io/gravitee-json-validation/commit/196e3999b3349c02eaf688343b3a0e6e71a541be))
+* select oneOf branch by discriminator and re-validate corrected config ([d03b7c6](https://github.com/gravitee-io/gravitee-json-validation/commit/d03b7c68d944cfaddbacdb7b31f4e3344fc0470d))
+
 ## [3.0.2](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.1...3.0.2) (2026-06-15)
 
 

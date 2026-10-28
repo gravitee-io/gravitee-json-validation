@@ -28,10 +28,13 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.networknt.schema.Error;
 import com.networknt.schema.ExecutionContext;
 import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaException;
 import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SchemaRegistryConfig;
 import com.networknt.schema.dialect.Dialect;
+import com.networknt.schema.dialect.Draft201909;
+import com.networknt.schema.dialect.Draft202012;
 import com.networknt.schema.dialect.Draft7;
 import com.networknt.schema.format.Format;
 import com.networknt.schema.keyword.AnnotationKeyword;
@@ -57,29 +60,37 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
     private static final Cache<JsonNode, Schema> SCHEMA_CACHE = Caffeine.newBuilder().maximumSize(MAX_CACHE_SIZE).build();
 
     /**
-     * Default networknt regex format validates against ECMA-262 syntax; existing schemas use Java Pattern syntax.
-     * Override registers JavaRegexFormat for both regex and java-regex names so schema patterns compile via
-     * java.util.regex.Pattern instead of being rejected.
-     *
-     * Legacy Gravitee schemas carry the Draft 4 "id" keyword (renamed to "$id" in Draft 6+). Draft 7 has no
-     * validator registered for bare "id", so SchemaRegistry throws "No suitable validator for id" on those
-     * documents. Registering it as an AnnotationKeyword makes it a no-op so the schemas compile.
+     * Java-regex formats and the legacy Draft 4 "id" keyword, applied to every dialect this registry accepts.
+     * The default networknt regex format validates ECMA-262 syntax; existing schemas use Java Pattern syntax, so
+     * both "regex" and "java-regex" compile via java.util.regex.Pattern.
+     * Legacy Gravitee schemas carry "id" (renamed to "$id" in Draft 6+). Draft 7 has no validator for bare "id",
+     * so SchemaRegistry throws "No suitable validator for id" unless it is registered as an annotation.
      */
-    private static final Dialect DRAFT7_WITH_REGEX = Dialect.builder(Draft7.getInstance())
-        .format(new JavaRegexFormat("java-regex"))
-        .format(new JavaRegexFormat("regex"))
-        .keyword(new AnnotationKeyword("id"))
-        .build();
+    private static Dialect withGraviteeKeywords(Dialect dialect) {
+        return Dialect.builder(dialect)
+            .format(new JavaRegexFormat("java-regex"))
+            .format(new JavaRegexFormat("regex"))
+            .keyword(new AnnotationKeyword("id"))
+            .build();
+    }
 
     /**
      * Factory that compiles JSON schema strings into Schema objects. Built once because:
-     *   - Binds the custom dialect above so all schemas inherit the Java-regex override.
+     *   - Draft 7 is the default when a schema omits $schema. 2019-09 and 2020-12 are registered as well:
+     *     plugin schemas (for example ai-prompt-token-tracking) declare those dialects, and a registry that
+     *     only knows Draft 7 throws InvalidSchemaException ("Unknown dialect") while compiling them.
      *   - formatAssertionsEnabled(true) — Draft 7 treats formats as annotations by default; flip to assertions so
      *     regex/format violations actually fail validation.
      *   - pathType(PathType.LEGACY) — emits $.foo.bar style paths (matches old everit output, keeps findObject happy).
      */
-    private static final SchemaRegistry SCHEMA_REGISTRY = SchemaRegistry.withDialect(DRAFT7_WITH_REGEX, builder ->
-        builder.schemaRegistryConfig(SchemaRegistryConfig.builder().formatAssertionsEnabled(true).pathType(PathType.LEGACY).build())
+    private static final SchemaRegistry SCHEMA_REGISTRY = SchemaRegistry.withDialects(
+        List.of(
+            withGraviteeKeywords(Draft7.getInstance()),
+            withGraviteeKeywords(Draft201909.getInstance()),
+            withGraviteeKeywords(Draft202012.getInstance())
+        ),
+        builder ->
+            builder.schemaRegistryConfig(SchemaRegistryConfig.builder().formatAssertionsEnabled(true).pathType(PathType.LEGACY).build())
     );
 
     @Override
@@ -111,7 +122,7 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
                 }
 
                 return MAPPER.writeValueAsString(jsonNode);
-            } catch (JsonProcessingException e) {
+            } catch (JsonProcessingException | SchemaException e) {
                 throw new InvalidJsonException(e.getMessage(), e);
             }
         }

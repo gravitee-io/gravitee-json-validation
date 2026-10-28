@@ -92,6 +92,59 @@ class JsonSchemaValidatorImplTest {
     }
 
     // -------------------------------------------------------------------------
+    // Schema dialects
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class SchemaDialects {
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = {
+                "https://json-schema.org/draft/2019-09/schema",
+                "https://json-schema.org/draft/2019-09/schema#",
+                "https://json-schema.org/draft/2020-12/schema",
+                "https://json-schema.org/draft/2020-12/schema#",
+            }
+        )
+        void should_validate_schema_that_declares_a_supported_dialect(String dialect) {
+            String schema = """
+                {
+                  "$schema": "%s",
+                  "id": "urn:test",
+                  "type": "object",
+                  "properties": {
+                    "pattern": { "type": "string", "format": "regex" },
+                    "extraction": {
+                      "type": "object",
+                      "properties": { "type": { "const": "GPT" } },
+                      "required": ["type"]
+                    }
+                  },
+                  "required": ["extraction"]
+                }
+                """.formatted(dialect);
+
+            String result = validator.validate(schema, "{\"extraction\": {\"type\": \"GPT\"}, \"pattern\": \"(?i)abc\"}");
+            assertThatJson(result).isEqualTo("{\"extraction\":{\"type\":\"GPT\"},\"pattern\":\"(?i)abc\"}");
+        }
+
+        @Test
+        void should_reject_unknown_dialect_as_invalid_json() {
+            String schema = """
+                {
+                  "$schema": "https://example.com/not-a-dialect",
+                  "type": "object"
+                }
+                """;
+
+            assertThatThrownBy(() -> validator.validate(schema, "{}"))
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessageContaining("Unknown dialect");
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Basic validation
     // -------------------------------------------------------------------------
 

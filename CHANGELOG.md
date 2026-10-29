@@ -1,3 +1,10 @@
+## [3.0.4](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.3...3.0.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* accept JSON Schema 2019-09 and 2020-12 dialects ([c1f0cbb](https://github.com/gravitee-io/gravitee-json-validation/commit/c1f0cbbf53788b62fabb22189947c7533bf186b9))
+
 ## [3.0.3](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.2...3.0.3) (2026-10-05)
 
 

@@ -583,6 +583,49 @@ class JsonSchemaValidatorImplTest {
             }
 
             @Test
+            void should_inject_branch_defaults_when_an_unrelated_oneOf_is_satisfied_by_several_branches() {
+                String schema = """
+                    {
+                      "$schema": "http://json-schema.org/draft-07/schema#",
+                      "type": "object",
+                      "properties": {
+                        "auth": {
+                          "type": "object",
+                          "oneOf": [
+                            { "properties": { "x": { "type": "integer" } } },
+                            { "properties": { "y": { "type": "integer" } } }
+                          ]
+                        },
+                        "proxy": {
+                          "type": "object",
+                          "oneOf": [
+                            { "properties": { "enabled": { "const": false } }, "additionalProperties": false },
+                            {
+                              "properties": {
+                                "enabled": { "const": true },
+                                "type": { "type": "string", "default": "HTTP" }
+                              },
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                    """;
+
+                String result = validator.validate(
+                    schema,
+                    """
+                    {"auth":{"x":1,"y":2},"proxy":{"enabled":true}}"""
+                );
+
+                assertThatJson(result).isEqualTo(
+                    """
+                    {"auth":{"x":1,"y":2},"proxy":{"enabled":true,"type":"HTTP"}}"""
+                );
+            }
+
+            @Test
             void should_not_inject_branch_defaults_when_several_branches_can_match() {
                 String schema = """
                     {

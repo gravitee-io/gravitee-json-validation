@@ -982,7 +982,8 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
                 injected.add(entry.getKey());
             }
         }
-        if (!injected.isEmpty() && !context.validator().validate(root).isEmpty()) {
+        // Same acceptance rule as the rest of the validation: a oneOf satisfied by several branches is tolerated.
+        if (!injected.isEmpty() && !withoutAmbiguousOneOfs(context.validator().validate(root)).isEmpty()) {
             injected.forEach(objectNode::remove);
         }
     }

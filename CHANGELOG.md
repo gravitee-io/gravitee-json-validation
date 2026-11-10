@@ -1,3 +1,11 @@
+## [3.0.5](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.4...3.0.5) (2026-11-10)
+
+
+### Bug Fixes
+
+* inject defaults of optional properties and of the matching oneOf branch ([00f9d66](https://github.com/gravitee-io/gravitee-json-validation/commit/00f9d667b583adbaad730cdec9b70e067a66029b))
+* keep branch defaults when another oneOf is satisfied by several branches ([a530753](https://github.com/gravitee-io/gravitee-json-validation/commit/a53075330e48d3c63993e0a2c2b15d40f9beb064))
+
 ## [3.0.4](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.3...3.0.4) (2026-10-29)
 
 

@@ -425,7 +425,7 @@ class JsonSchemaValidatorImplTest {
         }
 
         @Test
-        void should_only_inject_required_defaults_when_required_array_is_present() {
+        void should_inject_optional_defaults_when_required_array_is_present() {
             String schema = """
                 {
                   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -443,8 +443,201 @@ class JsonSchemaValidatorImplTest {
 
             assertThatJson(result).isEqualTo(
                 """
-                {"requiredWithDefault":"req-default"}"""
+                {"requiredWithDefault":"req-default","optionalWithDefault":"opt-default","anotherOptional":true}"""
             );
+        }
+
+        @Test
+        void should_inject_optional_defaults_when_required_properties_are_supplied() {
+            // Shape of the HTTP health-check schema: the gateway relies on the defaults of the optional properties.
+            String schema = """
+                {
+                  "$schema": "http://json-schema.org/draft-07/schema#",
+                  "type": "object",
+                  "properties": {
+                    "target": { "type": "string" },
+                    "method": { "type": "string", "default": "GET" },
+                    "overrideEndpointPath": { "type": "boolean", "default": true },
+                    "failureThreshold": { "type": "integer", "default": 2 }
+                  },
+                  "required": ["target"],
+                  "additionalProperties": false
+                }
+                """;
+
+            String result = validator.validate(
+                schema,
+                """
+                {"target":"/health","overrideEndpointPath":false}"""
+            );
+
+            assertThatJson(result).isEqualTo(
+                """
+                {"target":"/health","method":"GET","overrideEndpointPath":false,"failureThreshold":2}"""
+            );
+        }
+
+        @Nested
+        class OneOfBranchDefaults {
+
+            private static final String SCHEMA = """
+                {
+                  "$schema": "http://json-schema.org/draft-07/schema#",
+                  "type": "object",
+                  "properties": {
+                    "url": { "type": "string" }
+                  },
+                  "required": ["url"],
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "mode": { "const": "INTROSPECTION" },
+                        "introspectionEndpoint": { "type": "string", "default": "/introspect" }
+                      },
+                      "required": ["mode"]
+                    },
+                    {
+                      "properties": {
+                        "mode": { "const": "USERINFO" },
+                        "userInfoEndpoint": { "type": "string", "default": "/userinfo" },
+                        "claims": {
+                          "type": "object",
+                          "properties": {
+                            "user": { "type": "string", "default": "sub" }
+                          }
+                        }
+                      },
+                      "required": ["mode"]
+                    }
+                  ]
+                }
+                """;
+
+            @Test
+            void should_inject_defaults_of_the_matching_branch_of_a_valid_configuration() {
+                String result = validator.validate(
+                    SCHEMA,
+                    """
+                    {"url":"http://as","mode":"USERINFO"}"""
+                );
+
+                assertThatJson(result).isEqualTo(
+                    """
+                    {"url":"http://as","mode":"USERINFO","userInfoEndpoint":"/userinfo"}"""
+                );
+            }
+
+            @Test
+            void should_inject_defaults_of_objects_declared_by_the_matching_branch() {
+                String result = validator.validate(
+                    SCHEMA,
+                    """
+                    {"url":"http://as","mode":"USERINFO","userInfoEndpoint":"/me","claims":{}}"""
+                );
+
+                assertThatJson(result).isEqualTo(
+                    """
+                    {"url":"http://as","mode":"USERINFO","userInfoEndpoint":"/me","claims":{"user":"sub"}}"""
+                );
+            }
+
+            @Test
+            void should_inject_defaults_of_a_branch_nested_in_a_property() {
+                String schema = """
+                    {
+                      "$schema": "http://json-schema.org/draft-07/schema#",
+                      "type": "object",
+                      "properties": {
+                        "proxy": { "$ref": "#/definitions/proxy" }
+                      },
+                      "definitions": {
+                        "proxy": {
+                          "type": "object",
+                          "oneOf": [
+                            { "properties": { "enabled": { "const": false } }, "additionalProperties": false },
+                            {
+                              "properties": {
+                                "enabled": { "const": true },
+                                "host": { "type": "string" },
+                                "type": { "type": "string", "default": "HTTP" }
+                              },
+                              "required": ["host"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                    """;
+
+                String result = validator.validate(
+                    schema,
+                    """
+                    {"proxy":{"enabled":true,"host":"localhost"}}"""
+                );
+
+                assertThatJson(result).isEqualTo(
+                    """
+                    {"proxy":{"enabled":true,"host":"localhost","type":"HTTP"}}"""
+                );
+            }
+
+            @Test
+            void should_not_inject_branch_defaults_when_several_branches_can_match() {
+                String schema = """
+                    {
+                      "$schema": "http://json-schema.org/draft-07/schema#",
+                      "type": "object",
+                      "properties": { "name": { "type": "string" } },
+                      "oneOf": [
+                        { "properties": { "a": { "type": "string", "default": "a" } }, "not": { "required": ["b"] } },
+                        { "properties": { "b": { "type": "string", "default": "b" } }, "required": ["b"] }
+                      ]
+                    }
+                    """;
+
+                String result = validator.validate(
+                    schema,
+                    """
+                    {"name":"x","b":"set"}"""
+                );
+
+                assertThatJson(result).isEqualTo(
+                    """
+                    {"name":"x","b":"set"}"""
+                );
+            }
+
+            @Test
+            void should_discard_branch_defaults_that_would_invalidate_the_configuration() {
+                String schema = """
+                    {
+                      "$schema": "http://json-schema.org/draft-07/schema#",
+                      "type": "object",
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "kind": { "const": "A" },
+                            "size": { "type": "integer", "default": "not-an-integer" }
+                          },
+                          "required": ["kind"]
+                        },
+                        { "properties": { "kind": { "const": "B" } }, "required": ["kind"] }
+                      ]
+                    }
+                    """;
+
+                String result = validator.validate(
+                    schema,
+                    """
+                    {"kind":"A"}"""
+                );
+
+                assertThatJson(result).isEqualTo(
+                    """
+                    {"kind":"A"}"""
+                );
+            }
         }
 
         @Test
@@ -711,7 +904,7 @@ class JsonSchemaValidatorImplTest {
 
             assertThatJson(result).isEqualTo(
                 """
-                {"endpoint": {"type":"HTTP","x-custom-header":"value"}}"""
+                {"endpoint": {"type":"HTTP","timeout":5000,"x-custom-header":"value"}}"""
             );
         }
 
@@ -1378,7 +1571,7 @@ class JsonSchemaValidatorImplTest {
             String validate = validator.validate(schema, configuration);
             assertThatJson(validate).isEqualTo(
                 """
-                {"http":{"keepAliveTimeout":30000,"readTimeout":7777,"idleTimeout":60000,"connectTimeout":5000,"maxConcurrentConnections":100},"ssl":{"trustStore":{"path":"...","type":"PEM"},"hostnameVerifier":false,"trustAll":false}}"""
+                {"http":{"keepAliveTimeout":30000,"readTimeout":7777,"idleTimeout":60000,"connectTimeout":5000,"maxConcurrentConnections":100,"clearTextUpgrade":true,"followRedirects":false,"keepAlive":true,"pipelining":false,"propagateClientAcceptEncoding":false,"useCompression":true,"version":"HTTP_1_1"},"ssl":{"trustStore":{"path":"...","type":"PEM"},"hostnameVerifier":false,"trustAll":false}}"""
             );
         }
     }

@@ -121,6 +121,8 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
                     }
                 }
 
+                injectBranchDefaults(jsonNode, jsonNode, schemaNode, false, new BranchContext(schemaNode, schemaValidator));
+
                 return MAPPER.writeValueAsString(jsonNode);
             } catch (JsonProcessingException | SchemaException e) {
                 throw new InvalidJsonException(e.getMessage(), e);
@@ -916,6 +918,99 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
         return navigateSchemaPath(schemaRoot, fragment);
     }
 
+    /**
+     * Injects the defaults declared by the oneOf branches {@code jsonNode} matches. Plugins read their configuration
+     * expecting every default of the schema to be there, including those of the variant in use (e.g.
+     * {@code userInfoEndpoint} of an OAuth2 resource in USERINFO mode).
+     * <p>
+     * Each object is completed on its own and reverted when the document is no longer valid, so a wrongly identified
+     * branch, or a default that only makes sense along with other fields, never breaks a valid configuration.
+     *
+     * @param viaBranch whether {@code schemaNode} was reached through a oneOf branch: its own properties were then out
+     *                  of reach of {@link #injectOptionalDefaults} and are completed here as well.
+     */
+    private void injectBranchDefaults(JsonNode root, JsonNode jsonNode, JsonNode schemaNode, boolean viaBranch, BranchContext context) {
+        JsonNode resolved = resolveRef(context.schemaRoot(), schemaNode);
+        if (resolved == null) return;
+
+        if (jsonNode.isArray()) {
+            if (resolved.has("items")) {
+                for (JsonNode element : jsonNode) {
+                    injectBranchDefaults(root, element, resolved.get("items"), viaBranch, context);
+                }
+            }
+            return;
+        }
+        if (!(jsonNode instanceof ObjectNode objectNode)) return;
+
+        if (viaBranch) {
+            injectValidDefaults(root, objectNode, resolved, context);
+        }
+        JsonNode branch = matchingBranch(context.schemaRoot(), resolved, objectNode);
+        if (branch != null) {
+            injectValidDefaults(root, objectNode, branch, context);
+            injectBranchDefaultsOfProperties(root, objectNode, branch, true, context);
+        }
+        injectBranchDefaultsOfProperties(root, objectNode, resolved, viaBranch, context);
+    }
+
+    private void injectBranchDefaultsOfProperties(
+        JsonNode root,
+        ObjectNode objectNode,
+        JsonNode schema,
+        boolean viaBranch,
+        BranchContext context
+    ) {
+        JsonNode properties = schema.get("properties");
+        if (properties == null || !properties.isObject()) return;
+        for (Map.Entry<String, JsonNode> entry : properties.properties()) {
+            JsonNode child = objectNode.get(entry.getKey());
+            if (child != null) injectBranchDefaults(root, child, entry.getValue(), viaBranch, context);
+        }
+    }
+
+    /** Injects the defaults of the properties of {@code schema} missing from {@code objectNode}, unless that invalidates {@code root}. */
+    private void injectValidDefaults(JsonNode root, ObjectNode objectNode, JsonNode schema, BranchContext context) {
+        JsonNode properties = schema.get("properties");
+        if (properties == null || !properties.isObject()) return;
+
+        List<String> injected = new ArrayList<>();
+        for (Map.Entry<String, JsonNode> entry : properties.properties()) {
+            JsonNode propSchema = resolveRef(context.schemaRoot(), entry.getValue());
+            if (propSchema != null && propSchema.has("default") && !objectNode.has(entry.getKey())) {
+                objectNode.set(entry.getKey(), propSchema.get("default").deepCopy());
+                injected.add(entry.getKey());
+            }
+        }
+        if (!injected.isEmpty() && !context.validator().validate(root).isEmpty()) {
+            injected.forEach(objectNode::remove);
+        }
+    }
+
+    private record BranchContext(JsonNode schemaRoot, Schema validator) {}
+
+    /**
+     * The only oneOf branch of {@code objectSchema} that {@code object} can match: it contradicts none of the branch
+     * discriminators, supplies its required properties and has no property the branch forbids. {@code null} when there
+     * is no oneOf or when several branches (or none) qualify: defaults are never injected on a guess.
+     */
+    private JsonNode matchingBranch(JsonNode schemaRoot, JsonNode objectSchema, ObjectNode object) {
+        JsonNode oneOf = objectSchema.get("oneOf");
+        if (oneOf == null || !oneOf.isArray()) return null;
+
+        JsonNode match = null;
+        for (JsonNode candidate : oneOf) {
+            JsonNode branch = resolveRef(schemaRoot, candidate);
+            if (branch == null || !branch.isObject()) continue;
+            if (discriminatorMatches(valueConstraints(schemaRoot, branch), object) < 0) continue;
+            if (!stringSet(branch.get("required")).stream().allMatch(object::has)) continue;
+            if (!allowedProperties(branch).allMatch(object)) continue;
+            if (match != null) return null;
+            match = branch;
+        }
+        return match;
+    }
+
     // schemaRoot is the document root used to resolve "#/..." $refs; schemaNode is the (sub)schema being walked.
     private void injectOptionalDefaults(JsonNode jsonNode, JsonNode schemaRoot, JsonNode schemaNode) {
         if (!(jsonNode instanceof ObjectNode objectNode)) return;
@@ -926,16 +1021,6 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
         JsonNode properties = resolved.get("properties");
         if (properties == null) return;
 
-        // When the schema declares "required", restrict auto-injection to those properties. Non-required
-        // fields are treated as opt-in: the caller's omission is intentional, so we don't populate them
-        // even when they carry a default. Without a "required" array we fall back to injecting every
-        // default — legacy behavior relied on by schemas that lean on defaults instead of requirements.
-        Set<String> requiredFields = null;
-        JsonNode requiredArray = resolved.get("required");
-        if (requiredArray != null && requiredArray.isArray()) {
-            requiredFields = stringSet(requiredArray);
-        }
-
         for (Map.Entry<String, JsonNode> entry : properties.properties()) {
             String propName = entry.getKey();
             JsonNode propSchema = resolveRef(schemaRoot, entry.getValue());
@@ -944,7 +1029,6 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
             if (!objectNode.has(propName)) {
                 if (
                     propSchema.has("default") &&
-                    (requiredFields == null || requiredFields.contains(propName)) &&
                     defaultFitsPresentFields(objectNode, schemaRoot, resolved, propName, propSchema.get("default"))
                 ) {
                     objectNode.set(propName, propSchema.get("default").deepCopy());

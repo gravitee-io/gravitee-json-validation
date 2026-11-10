@@ -49,11 +49,11 @@ This prevents issues when updating configurations that may contain explicit null
 
 === Default Values Injection
 
-When `useDefaults` is enabled (which is the default), the validator automatically injects default values for missing required properties.
+The validator injects the `default` value of every property missing from an object that is present in the configuration, whether the property is listed in `required` or not. Plugins read their configuration expecting those values to be there.
 
-==== Simple required properties
+A missing required property without `default` is still a validation error.
 
-If a required property is missing but has a `default` value defined in the schema, the default value is injected.
+==== Simple properties
 
 [source,json]
 ----
@@ -61,14 +61,18 @@ If a required property is missing but has a `default` value defined in the schem
 {
   "type": "object",
   "properties": {
-    "timeout": { "type": "integer", "default": 5000 }
+    "target": { "type": "string" },
+    "timeout": { "type": "integer", "default": 5000 },
+    "method": { "type": "string", "default": "GET" }
   },
-  "required": ["timeout"]
+  "required": ["target", "timeout"]
 }
 
-// Input: {}
-// Output: {"timeout": 5000}
+// Input: {"target": "/health"}
+// Output: {"target": "/health", "timeout": 5000, "method": "GET"}
 ----
+
+Defaults are only injected into objects the configuration supplies: an absent nested object is not created.
 
 ==== Nested objects
 
@@ -128,7 +132,8 @@ Inline subschemas and `$ref` subschemas are handled identically.
 * *No discriminator value*: the **first subschema** the config does not contradict (preferring those accepting every field present), and its `const` values are injected — except a discriminator required by the schema holding the `oneOf`, which must then be supplied. When the subschemas have no discriminator at all, the one declaring most of the fields present is preferred.
 2. **Correction**: missing `const` values and missing required properties with defaults are injected from the selected subschema, and properties it does not allow (`additionalProperties: false`) are removed. Errors raised by the other subschemas are ignored.
 3. **Re-validation**: the corrected config is validated again and rejected unless it conforms. A config satisfying several subschemas is accepted.
-4. **Error reporting**: when the selected subschema is identified unambiguously, its own errors are reported (e.g. `$.authentication: required property 'clientSecret' not found`) instead of the generic `must be valid to one and only one schema` error.
+4. **Branch defaults**: when the config can match a single subschema only (it contradicts none of its discriminators, supplies its required properties and has no property it forbids), the defaults of that subschema are injected as well, including those of the objects it declares. They are skipped when they would make the config invalid, and when several subschemas can match.
+5. **Error reporting**: when the selected subschema is identified unambiguously, its own errors are reported (e.g. `$.authentication: required property 'clientSecret' not found`) instead of the generic `must be valid to one and only one schema` error.
 
 ==== Example with discriminator provided
 

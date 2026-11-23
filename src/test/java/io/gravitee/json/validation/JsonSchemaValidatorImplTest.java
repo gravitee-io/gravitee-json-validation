@@ -796,6 +796,219 @@ class JsonSchemaValidatorImplTest {
     }
 
     // -------------------------------------------------------------------------
+    // uniqueItemProperties keyword
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class UniqueItemProperties {
+
+        private static final String SCHEMA = """
+            {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "uniqueItemProperties": ["name", "code"],
+                  "items": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string" }, "code": { "type": "integer" } }
+                  }
+                }
+              }
+            }""";
+
+        @Test
+        void should_accept_items_with_distinct_values() {
+            String json = """
+                { "items": [{ "name": "a", "code": 1 }, { "name": "b", "code": 2 }] }""";
+            assertThatJson(validator.validate(SCHEMA, json)).isEqualTo(json);
+        }
+
+        @Test
+        void should_reject_items_repeating_a_value() {
+            assertThatThrownBy(() ->
+                validator.validate(
+                    SCHEMA,
+                    """
+                    { "items": [{ "name": "a", "code": 1 }, { "name": "a", "code": 2 }, { "name": "a", "code": 3 }] }"""
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessage("$.items: must have a different name on each item, but \"a\" is repeated");
+        }
+
+        @Test
+        void should_check_each_property_on_its_own() {
+            assertThatThrownBy(() ->
+                validator.validate(
+                    SCHEMA,
+                    """
+                    { "items": [{ "name": "a", "code": 1 }, { "name": "b", "code": 1 }] }"""
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessage("$.items: must have a different code on each item, but 1 is repeated");
+        }
+
+        @Test
+        void should_ignore_items_without_the_property() {
+            String json = """
+                { "items": [{ "name": "a" }, { "code": 1 }, { "code": 2 }, {}, {}] }""";
+            assertThatJson(validator.validate(SCHEMA, json)).isEqualTo(json);
+        }
+
+        @Test
+        void should_apply_inside_a_discriminated_oneOf_branch() {
+            String schema = """
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "questions": {
+                      "type": "array",
+                      "uniqueItemProperties": ["name"],
+                      "items": {
+                        "type": "object",
+                        "oneOf": [
+                          {
+                            "properties": {
+                              "type": { "const": "CHOICE" },
+                              "name": { "type": "string" },
+                              "choices": {
+                                "type": "array",
+                                "uniqueItemProperties": ["name"],
+                                "items": { "type": "object", "properties": { "name": { "type": "string" } } }
+                              }
+                            },
+                            "required": ["type", "name", "choices"]
+                          },
+                          {
+                            "properties": { "type": { "const": "NOUL" }, "name": { "type": "string" } },
+                            "required": ["type", "name"]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }""";
+
+            assertThatThrownBy(() ->
+                validator.validate(
+                    schema,
+                    """
+                    { "questions": [
+                      { "type": "NOUL", "name": "q" },
+                      { "type": "CHOICE", "name": "c", "choices": [{ "name": "x" }, { "name": "x" }] }
+                    ] }"""
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessage("$.questions[1].choices: must have a different name on each item, but \"x\" is repeated");
+            assertThatThrownBy(() ->
+                validator.validate(
+                    schema,
+                    """
+                    { "questions": [{ "type": "NOUL", "name": "q" }, { "type": "NOUL", "name": "q" }] }"""
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessage("$.questions: must have a different name on each item, but \"q\" is repeated");
+        }
+
+        @Test
+        void should_reject_a_schema_whose_keyword_is_not_an_array_of_names() {
+            assertThatThrownBy(() ->
+                validator.validate(
+                    """
+                    { "type": "array", "uniqueItemProperties": "name" }""",
+                    "[]"
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessageContaining("uniqueItemProperties must be an array of property names");
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = {
+                "[{ \"code\": 1 }, { \"code\": 1.0 }]", "[{ \"code\": 1.0 }, { \"code\": 1.00 }]", "[{ \"code\": 10 }, { \"code\": 1e1 }]",
+            }
+        )
+        void should_compare_numbers_by_value(String json) {
+            assertThatThrownBy(() ->
+                validator.validate(
+                    """
+                    { "type": "array", "uniqueItemProperties": ["code"] }""",
+                    json
+                )
+            )
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessageStartingWith("$: must have a different code on each item, but ");
+        }
+
+        /**
+         * Default injection copies the default of a property into every item missing it: a default on a property that
+         * must be unique could only manufacture duplicates, so the schema itself is refused.
+         */
+        @ParameterizedTest
+        @ValueSource(
+            strings = {
+                // optional property
+                """
+                { "type": "array", "uniqueItemProperties": ["name"],
+                  "items": { "type": "object", "properties": { "name": { "type": "string", "default": "x" } } } }""",
+                // required property
+                """
+                { "type": "array", "uniqueItemProperties": ["name"],
+                  "items": { "type": "object", "properties": { "name": { "type": "string", "default": "x" } }, "required": ["name"] } }""",
+                // property of a oneOf branch
+                """
+                { "type": "array", "uniqueItemProperties": ["name"],
+                  "items": { "type": "object", "oneOf": [
+                    { "properties": { "type": { "const": "A" }, "name": { "type": "string", "default": "x" } }, "required": ["type"] },
+                    { "properties": { "type": { "const": "B" } }, "required": ["type"] }
+                  ] } }""",
+                // property of the then of a conditional
+                """
+                { "type": "array", "uniqueItemProperties": ["name"],
+                  "items": { "type": "object", "properties": { "type": { "type": "string" } }, "allOf": [
+                    { "if": { "properties": { "type": { "const": "A" } }, "required": ["type"] },
+                      "then": { "properties": { "name": { "type": "string", "default": "x" } }, "required": ["name"] } }
+                  ] } }""",
+                // property of the else of a conditional
+                """
+                { "type": "array", "uniqueItemProperties": ["name"],
+                  "items": { "type": "object", "if": { "properties": { "type": { "const": "A" } }, "required": ["type"] },
+                    "then": { "properties": { "type": { "const": "A" } } },
+                    "else": { "properties": { "name": { "type": "string", "default": "x" } } } } }""",
+                // items and property behind $refs
+                """
+                { "type": "object", "properties": { "list": { "type": "array", "uniqueItemProperties": ["name"], "items": { "$ref": "#/definitions/item" } } },
+                  "definitions": { "item": { "type": "object", "properties": { "name": { "$ref": "#/definitions/name" } } }, "name": { "type": "string", "default": "x" } } }""",
+            }
+        )
+        void should_refuse_a_schema_giving_a_default_to_a_unique_property(String schema) {
+            assertThatThrownBy(() -> validator.validate(schema, "[{}, {}]"))
+                .isInstanceOf(InvalidJsonException.class)
+                .hasMessageContaining("the property name is listed in uniqueItemProperties, it cannot have a default");
+        }
+
+        @Test
+        void should_return_a_document_that_validates_again() {
+            String schema = """
+                { "type": "object", "properties": { "list": { "type": "array", "uniqueItemProperties": ["name"],
+                  "items": { "type": "object", "properties": { "name": { "type": "string" }, "enabled": { "type": "boolean", "default": true } } } } } }""";
+
+            String validated = validator.validate(schema, "{ \"list\": [{ \"name\": \"a\" }, { \"name\": \"b\" }, {}] }");
+
+            assertThatJson(validated).isEqualTo(
+                "{ \"list\": [{ \"name\": \"a\", \"enabled\": true }, { \"name\": \"b\", \"enabled\": true }, { \"enabled\": true }] }"
+            );
+            assertThatJson(validator.validate(schema, validated)).isEqualTo(validated);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // OneOf handling
     // -------------------------------------------------------------------------
 

@@ -65,12 +65,15 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
      * both "regex" and "java-regex" compile via java.util.regex.Pattern.
      * Legacy Gravitee schemas carry "id" (renamed to "$id" in Draft 6+). Draft 7 has no validator for bare "id",
      * so SchemaRegistry throws "No suitable validator for id" unless it is registered as an annotation.
+     * The ajv-keywords "uniqueItemProperties" keyword lets a schema require a property to be unique across the items of
+     * an array, which standard JSON Schema cannot express.
      */
     private static Dialect withGraviteeKeywords(Dialect dialect) {
         return Dialect.builder(dialect)
             .format(new JavaRegexFormat("java-regex"))
             .format(new JavaRegexFormat("regex"))
             .keyword(new AnnotationKeyword("id"))
+            .keyword(new UniqueItemPropertiesKeyword())
             .build();
     }
 
@@ -132,7 +135,67 @@ public class JsonSchemaValidatorImpl implements JsonSchemaValidator {
     }
 
     private Schema getSchemaValidator(JsonNode schemaNode) {
-        return SCHEMA_CACHE.get(schemaNode, SCHEMA_REGISTRY::getSchema);
+        return SCHEMA_CACHE.get(schemaNode, node -> {
+            rejectDefaultsOfUniqueItemProperties(node, node, "#");
+            return SCHEMA_REGISTRY.getSchema(node);
+        });
+    }
+
+    /**
+     * Refuses a schema giving a {@code default} to a property its {@code uniqueItemProperties} lists: default injection
+     * copies that value into every item missing the property, so it could only manufacture duplicates.
+     */
+    private void rejectDefaultsOfUniqueItemProperties(JsonNode schemaRoot, JsonNode schemaNode, String location) {
+        if (schemaNode.isObject() && schemaNode.has(UniqueItemPropertiesKeyword.KEYWORD)) {
+            Set<String> unique = stringSet(schemaNode.get(UniqueItemPropertiesKeyword.KEYWORD));
+            for (JsonNode variant : variants(schemaRoot, schemaNode.get("items"), new ArrayList<>())) {
+                JsonNode properties = variant.get("properties");
+                if (properties == null || !properties.isObject()) continue;
+                for (String property : unique) {
+                    JsonNode propertySchema = resolveRef(schemaRoot, properties.get(property));
+                    if (propertySchema != null && propertySchema.has("default")) {
+                        throw new SchemaException(
+                            location +
+                                ": the property " +
+                                property +
+                                " is listed in " +
+                                UniqueItemPropertiesKeyword.KEYWORD +
+                                ", it cannot have a default"
+                        );
+                    }
+                }
+            }
+        }
+        if (schemaNode.isObject()) {
+            schemaNode
+                .properties()
+                .forEach(entry -> rejectDefaultsOfUniqueItemProperties(schemaRoot, entry.getValue(), location + "/" + entry.getKey()));
+        } else if (schemaNode.isArray()) {
+            for (int i = 0; i < schemaNode.size(); i++) {
+                rejectDefaultsOfUniqueItemProperties(schemaRoot, schemaNode.get(i), location + "/" + i);
+            }
+        }
+    }
+
+    /**
+     * The schema of the items and the schemas it combines through oneOf, anyOf and allOf or applies through the then and
+     * else of a conditional, $refs resolved.
+     */
+    private List<JsonNode> variants(JsonNode schemaRoot, JsonNode schemaNode, List<JsonNode> collected) {
+        JsonNode resolved = resolveRef(schemaRoot, schemaNode);
+        if (resolved == null || !resolved.isObject() || collected.stream().anyMatch(seen -> seen == resolved)) return collected;
+        collected.add(resolved);
+        for (String combinator : List.of("oneOf", "anyOf", "allOf")) {
+            JsonNode schemas = resolved.get(combinator);
+            if (schemas != null && schemas.isArray()) {
+                schemas.forEach(schema -> variants(schemaRoot, schema, collected));
+            }
+        }
+        // A conditional injects the defaults of its branches as well.
+        for (String conditional : List.of("then", "else")) {
+            variants(schemaRoot, resolved.get(conditional), collected);
+        }
+        return collected;
     }
 
     /**

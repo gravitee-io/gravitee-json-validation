@@ -266,6 +266,29 @@ The library supports both `regex` and `java-regex` format validators for validat
 }
 ----
 
+=== Unique Item Properties
+
+The `uniqueItemProperties` keyword, inspired by ajv-keywords, requires each listed property to have a different value on every item of an array. Standard JSON Schema cannot express it: `uniqueItems` compares whole items. Each property is checked on its own, and numbers are compared by value (`1` and `1.0` are the same).
+
+Unlike ajv-keywords, items that do not have the property are ignored: make the property `required` to forbid them. A listed property cannot have a `default`: default injection would copy it into every item missing the property, so a schema doing so is refused.
+
+[source,json]
+----
+{
+  "type": "array",
+  "uniqueItemProperties": ["name"],
+  "items": {
+    "type": "object",
+    "properties": { "name": { "type": "string" } },
+    "required": ["name"]
+  }
+}
+----
+
+`[{"name": "a"}, {"name": "a"}]` is rejected with `$: must have a different name on each item, but "a" is repeated`.
+
+The keyword requires gravitee-json-validation 3.1.0 or later: earlier versions ignore it, and the constraint is then silently lost. It is not standard: the configuration forms of the console (`@gravitee/ui-particles-angular`) do not know it either, so a duplicate is only refused when the configuration is saved, with an error on the array rather than on the repeated field.
+
 == Error Handling
 
 When validation fails and cannot be auto-corrected, an `InvalidJsonException` is thrown with a detailed message about the validation error. The config is always re-validated after auto-correction, so a corrected config is only returned when it conforms to the schema.

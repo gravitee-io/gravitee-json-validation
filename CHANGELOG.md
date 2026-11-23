@@ -1,3 +1,10 @@
+# [3.1.0](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.5...3.1.0) (2026-11-23)
+
+
+### Features
+
+* add the uniqueItemProperties keyword ([250550f](https://github.com/gravitee-io/gravitee-json-validation/commit/250550f8ce20250deaae93d49c47a90f3c5ab7f9))
+
 ## [3.0.5](https://github.com/gravitee-io/gravitee-json-validation/compare/3.0.4...3.0.5) (2026-11-10)
 
 
